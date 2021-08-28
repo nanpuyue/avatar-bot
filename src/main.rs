@@ -22,7 +22,7 @@ lazy_static! {
         let mut chat_list = Vec::new();
         for i in env::var("CHAT_LIST")
             .expect("Please set the environment variable CHAT_LIST")
-            .split(",")
+            .split(',')
         {
             chat_list.push(i64::from_str(i).expect("Parsing CHAT_LIST failed"));
         }
@@ -50,74 +50,68 @@ async fn answer(
         Command::SetAvatar => {
             let chat_id = cx.chat_id();
             if CHAT_LIST.contains(&chat_id) {
-                let cooling = if let Some(last_update) = LAST_UPDATE.lock().unwrap().get(&chat_id) {
-                    last_update.elapsed() < MIN_INTERVAL
-                } else {
-                    false
-                };
-                if cooling {
+                if LAST_UPDATE
+                    .lock()
+                    .unwrap()
+                    .get(&chat_id)
+                    .map_or(false, |x| x.elapsed() < MIN_INTERVAL)
+                {
                     cx.reply_to("技能冷却中").await?;
                     return Ok(());
                 }
 
-                match &cx.update.kind {
-                    MessageKind::Common(common) => {
-                        if let ForwardKind::Origin(orig) = &common.forward_kind {
-                            if let Some(msg) = &orig.reply_to_message {
-                                let mut file_id;
-                                file_id = msg.sticker().map(|x| x.file_id.clone());
-                                if file_id.is_none() {
-                                    file_id = msg
-                                        .photo()
-                                        .map(|x| {
-                                            x.iter()
-                                                .max_by_key(|&x| x.file_size)
-                                                .map(|x| x.file_id.clone())
-                                        })
-                                        .flatten();
+                if let MessageKind::Common(common) = &cx.update.kind {
+                    if let ForwardKind::Origin(orig) = &common.forward_kind {
+                        if let Some(msg) = &orig.reply_to_message {
+                            let mut file_id = msg.sticker().map(|x| x.file_id.clone());
+
+                            if file_id.is_none() {
+                                file_id = msg
+                                    .photo()
+                                    .map(|x| {
+                                        x.iter()
+                                            .max_by_key(|&x| x.file_size)
+                                            .map(|x| x.file_id.clone())
+                                    })
+                                    .flatten();
+                            }
+
+                            if file_id.is_none() {
+                                file_id = msg
+                                    .document()
+                                    .filter(|&x| {
+                                        x.thumb.is_some()
+                                            && x.file_size.map_or(false, |x| x <= MAX_FILESIZE)
+                                    })
+                                    .map(|x| x.file_id.clone())
+                            }
+
+                            if let Some(file_id) = file_id {
+                                let mut buf = Vec::new();
+                                let file = cx.requester.get_file(&file_id).await?;
+                                cx.requester
+                                    .download_file(&file.file_path, &mut buf)
+                                    .await?;
+
+                                if file.file_path.ends_with(".webp") {
+                                    let image = ImageResource::from_reader(&*buf)?;
+                                    let mut jpg = ImageResource::Data(Vec::new());
+                                    let mut config = JPGConfig::new();
+                                    config.background_color = Some(ColorName::White);
+                                    config.quality = 100;
+                                    to_jpg(&mut jpg, &image, &config)?;
+                                    buf = jpg.into_vec().unwrap();
                                 }
-                                if file_id.is_none() {
-                                    file_id = msg
-                                        .document()
-                                        .filter(|&x| {
-                                            x.thumb.is_some()
-                                                && if let Some(size) = x.file_size {
-                                                    size <= MAX_FILESIZE
-                                                } else {
-                                                    false
-                                                }
-                                        })
-                                        .map(|x| x.file_id.clone())
-                                }
-                                if let Some(file_id) = file_id {
-                                    let mut buf = Vec::new();
-                                    let file = cx.requester.get_file(&file_id).await?;
-                                    cx.requester
-                                        .download_file(&file.file_path, &mut buf)
-                                        .await?;
-                                    if file.file_path.ends_with(".webp") {
-                                        let image = ImageResource::from_reader(&*buf)?;
-                                        let mut jpg = ImageResource::Data(Vec::new());
-                                        let mut config = JPGConfig::new();
-                                        config.background_color = Some(ColorName::White);
-                                        config.quality = 100;
-                                        to_jpg(&mut jpg, &image, &config)?;
-                                        buf = jpg.into_vec().unwrap();
-                                    }
-                                    cx.requester
-                                        .set_chat_photo(
-                                            chat_id,
-                                            InputFile::memory("avatar.file", buf),
-                                        )
-                                        .await?;
-                                    LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
-                                } else {
-                                    cx.reply_to("未检测到受支持的头像").await?;
-                                }
+
+                                cx.requester
+                                    .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
+                                    .await?;
+                                LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
+                            } else {
+                                cx.reply_to("未检测到受支持的头像").await?;
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
