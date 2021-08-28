@@ -12,6 +12,7 @@ use teloxide::types::{ForwardKind, InputFile, MessageKind};
 use teloxide::utils::command::BotCommand;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
+const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
     static ref LAST_UPDATE: Arc<Mutex<Instant>> =
@@ -67,6 +68,19 @@ async fn answer(
                                                 .map(|x| x.file_id.clone())
                                         })
                                         .flatten();
+                                }
+                                if file_id.is_none() {
+                                    file_id = msg
+                                        .document()
+                                        .filter(|&x| {
+                                            x.thumb.is_some()
+                                                && if let Some(size) = x.file_size {
+                                                    size <= MAX_FILESIZE
+                                                } else {
+                                                    false
+                                                }
+                                        })
+                                        .map(|x| x.file_id.clone())
                                 }
                                 if let Some(file_id) = file_id {
                                     let mut buf = Vec::new();
