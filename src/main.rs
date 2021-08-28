@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::str::FromStr;
@@ -15,8 +16,8 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
-    static ref LAST_UPDATE: Arc<Mutex<Instant>> =
-        Arc::new(Mutex::new(Instant::now() - MIN_INTERVAL));
+    static ref LAST_UPDATE: Arc<Mutex<HashMap<i64, Instant>>> =
+        Arc::new(Mutex::new(<HashMap<i64, Instant>>::new()));
     static ref CHAT_LIST: Vec<i64> = {
         let mut chat_list = Vec::new();
         for i in env::var("CHAT_LIST")
@@ -47,8 +48,14 @@ async fn answer(
             cx.answer(Command::descriptions()).await?;
         }
         Command::SetAvatar => {
-            if CHAT_LIST.contains(&cx.update.chat.id) {
-                if LAST_UPDATE.lock().unwrap().elapsed() < MIN_INTERVAL {
+            let chat_id = cx.chat_id();
+            if CHAT_LIST.contains(&chat_id) {
+                let cooling = if let Some(last_update) = LAST_UPDATE.lock().unwrap().get(&chat_id) {
+                    last_update.elapsed() < MIN_INTERVAL
+                } else {
+                    false
+                };
+                if cooling {
                     cx.reply_to("技能冷却中").await?;
                     return Ok(());
                 }
@@ -99,11 +106,11 @@ async fn answer(
                                     }
                                     cx.requester
                                         .set_chat_photo(
-                                            cx.update.chat.id,
+                                            chat_id,
                                             InputFile::memory("avatar.file", buf),
                                         )
                                         .await?;
-                                    *LAST_UPDATE.lock().unwrap() = Instant::now();
+                                    LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
                                 } else {
                                     cx.reply_to("未检测到受支持的头像").await?;
                                 }
