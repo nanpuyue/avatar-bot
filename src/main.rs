@@ -1,5 +1,6 @@
 use std::env;
 use std::error::Error;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,16 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 lazy_static! {
     static ref LAST_UPDATE: Arc<Mutex<Instant>> =
         Arc::new(Mutex::new(Instant::now() - MIN_INTERVAL));
+    static ref CHAT_LIST: Vec<i64> = {
+        let mut chat_list = Vec::new();
+        for i in env::var("CHAT_LIST")
+            .expect("Please set the environment variable CHAT_LIST")
+            .split(",")
+        {
+            chat_list.push(i64::from_str(i).expect("Parsing CHAT_LIST failed"));
+        }
+        chat_list
+    };
 }
 
 #[derive(BotCommand)]
@@ -35,7 +46,7 @@ async fn answer(
             cx.answer(Command::descriptions()).await?;
         }
         Command::SetAvatar => {
-            if cx.update.chat.is_supergroup() || cx.update.chat.is_group() {
+            if CHAT_LIST.contains(&cx.update.chat.id) {
                 if LAST_UPDATE.lock().unwrap().elapsed() < MIN_INTERVAL {
                     cx.reply_to("技能冷却中").await?;
                     return Ok(());
@@ -98,8 +109,10 @@ async fn answer(
 async fn main() {
     teloxide::enable_logging!();
 
-    let bot_token = env::var("BOT_TOKEN").expect("Please set the environment variable BOT_TOKEN.");
-    let bot_name = env::var("BOT_NAME").expect("Please set the environment variable BOT_NAME.");
+    let bot_token = env::var("BOT_TOKEN").expect("Please set the environment variable BOT_TOKEN");
+    let bot_name = env::var("BOT_NAME").expect("Please set the environment variable BOT_NAME");
+
+    lazy_static::initialize(&CHAT_LIST);
 
     let bot = Bot::new(bot_token).auto_send();
     teloxide::commands_repl(bot, bot_name, answer).await;
