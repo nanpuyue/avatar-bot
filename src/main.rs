@@ -1,11 +1,21 @@
 use std::env;
 use std::error::Error;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use image_convert::{to_jpg, ColorName, ImageResource, JPGConfig};
+use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, InputFile, MessageKind};
 use teloxide::utils::command::BotCommand;
+
+const MIN_INTERVAL: Duration = Duration::from_secs(30);
+
+lazy_static! {
+    static ref LAST_UPDATE: Arc<Mutex<Instant>> =
+        Arc::new(Mutex::new(Instant::now() - MIN_INTERVAL));
+}
 
 #[derive(BotCommand)]
 #[command(description = "本 bot 支持如下命令:")]
@@ -26,6 +36,11 @@ async fn answer(
         }
         Command::SetAvatar => {
             if cx.update.chat.is_supergroup() || cx.update.chat.is_group() {
+                if LAST_UPDATE.lock().unwrap().elapsed() < MIN_INTERVAL {
+                    cx.reply_to("技能冷却中").await?;
+                    return Ok(());
+                }
+
                 match &cx.update.kind {
                     MessageKind::Common(common) => {
                         if let ForwardKind::Origin(orig) = &common.forward_kind {
@@ -63,6 +78,7 @@ async fn answer(
                                             InputFile::memory("avatar.file", buf),
                                         )
                                         .await?;
+                                    *LAST_UPDATE.lock().unwrap() = Instant::now();
                                 } else {
                                     cx.reply_to("未检测到受支持的头像").await?;
                                 }

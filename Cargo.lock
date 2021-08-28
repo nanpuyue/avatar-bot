@@ -74,6 +74,7 @@ name = "avatar-bot"
 version = "0.1.0"
 dependencies = [
  "image-convert",
+ "lazy_static 1.4.0",
  "log 0.4.14",
  "pretty_env_logger",
  "teloxide",
