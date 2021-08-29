@@ -11,7 +11,7 @@ use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, InputFile, MessageKind};
 use teloxide::utils::command::BotCommand;
 
-use crate::convert::webp_to_jpg;
+use crate::convert::{mp4_to_jpg, webp_to_jpg};
 
 mod convert;
 
@@ -89,6 +89,16 @@ async fn answer(
                                     .map(|x| x.file_id.clone())
                             }
 
+                            if file_id.is_none() {
+                                file_id = msg
+                                    .animation()
+                                    .filter(|&x| {
+                                        x.thumb.is_some()
+                                            && x.file_size.map_or(false, |x| x <= MAX_FILESIZE)
+                                    })
+                                    .map(|x| x.file_id.clone())
+                            }
+
                             if let Some(file_id) = file_id {
                                 let mut buf = Vec::new();
                                 let file = cx.requester.get_file(&file_id).await?;
@@ -98,6 +108,9 @@ async fn answer(
 
                                 if file.file_path.ends_with(".webp") {
                                     buf = webp_to_jpg(buf.as_ref())?;
+                                }
+                                if file.file_path.ends_with(".mp4") {
+                                    buf = mp4_to_jpg(buf.as_ref())?;
                                 }
 
                                 cx.requester

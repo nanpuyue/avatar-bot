@@ -10,7 +10,9 @@ edition = "2018"
 image = "0.23.14"
 lazy_static = "1.4.0"
 log = "0.4.14"
+opencv = "0.53.2"
 pretty_env_logger = "0.4.0"
 teloxide = { version = "0.5.2", features = ["auto-send", "macros"] }
+tempfile = "3.2.0"
 tokio = { version = "1.10.1", features = ["macros", "rt-multi-thread"] }
 webp = "0.1.3"
