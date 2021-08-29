@@ -15,12 +15,11 @@ fn bgra_to_bgr(pixel: &mut Bgra<u8>) {
 
 pub fn webp_to_jpg(data: &[u8]) -> ImageResult<Vec<u8>> {
     let decoder = Decoder::new(data);
-    let webp = decoder.decode().map_or(
-        Err(ImageError::Decoding(DecodingError::from_format_hint(
-            ImageFormatHint::Name("webp".to_string()),
-        ))),
-        |x| Ok(x),
-    )?;
+    let webp = decoder.decode().ok_or_else(|| {
+        ImageError::Decoding(DecodingError::from_format_hint(ImageFormatHint::Name(
+            "webp".to_string(),
+        )))
+    })?;
     let image = webp.to_image();
 
     let mut bgra = image.into_bgra8();
