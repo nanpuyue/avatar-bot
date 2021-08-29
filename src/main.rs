@@ -113,10 +113,18 @@ async fn answer(
                                     buf = mp4_to_jpg(buf.as_ref())?;
                                 }
 
-                                cx.requester
+                                match cx
+                                    .requester
                                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
-                                    .await?;
-                                LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
+                                    .await
+                                {
+                                    Err(_) => {
+                                        cx.reply_to("出现了预料外的错误").await?;
+                                    }
+                                    Ok(_) => {
+                                        LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
+                                    }
+                                };
                             } else {
                                 cx.reply_to("未检测到受支持的头像").await?;
                             }
