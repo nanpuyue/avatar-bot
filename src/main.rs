@@ -5,12 +5,15 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use image_convert::{to_jpg, ColorName, ImageResource, JPGConfig};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, InputFile, MessageKind};
 use teloxide::utils::command::BotCommand;
+
+use crate::convert::webp_to_jpg;
+
+mod convert;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
@@ -94,13 +97,7 @@ async fn answer(
                                     .await?;
 
                                 if file.file_path.ends_with(".webp") {
-                                    let image = ImageResource::from_reader(&*buf)?;
-                                    let mut jpg = ImageResource::Data(Vec::new());
-                                    let mut config = JPGConfig::new();
-                                    config.background_color = Some(ColorName::White);
-                                    config.quality = 100;
-                                    to_jpg(&mut jpg, &image, &config)?;
-                                    buf = jpg.into_vec().unwrap();
+                                    buf = webp_to_jpg(buf.as_ref())?;
                                 }
 
                                 cx.requester
