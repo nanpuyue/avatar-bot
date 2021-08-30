@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -8,10 +7,13 @@ use std::time::{Duration, Instant};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
-use teloxide::types::{ForwardKind, InputFile, MessageKind};
+use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, MessageKind};
 use teloxide::utils::command::BotCommand;
 
 use crate::convert::{mp4_to_png, webp_to_png};
+use crate::Error;
+
+type Context = UpdateWithCx<AutoSend<Bot>, Message>;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
@@ -40,98 +42,106 @@ pub enum Command {
     SetAvatar(String),
 }
 
-pub async fn answer(
-    cx: UpdateWithCx<AutoSend<Bot>, Message>,
-    command: Command,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    match command {
-        Command::Help => {
-            cx.answer(Command::descriptions()).await?;
+macro_rules! file_id {
+    ($msg:expr, $func:ident) => {
+        $msg.$func()
+            .filter(|&x| x.thumb.is_some() && x.file_size.map_or(false, |x| x <= MAX_FILESIZE))
+            .map(|x| x.file_id.clone())
+    };
+}
+
+impl Command {
+    async fn help(cx: Context) -> Result<(), Error> {
+        cx.answer(Command::descriptions()).await?;
+        Ok(())
+    }
+
+    async fn set_avatar(color: &str, cx: Context) -> Result<(), Error> {
+        let chat_id = cx.chat_id();
+
+        if !CHAT_LIST.contains(&chat_id) {
+            cx.reply_to(format!("尚未向本群组 ({}) 提供服务", chat_id))
+                .await?;
+            return Ok(());
         }
-        Command::SetAvatar(background) => {
-            let chat_id = cx.chat_id();
-            if CHAT_LIST.contains(&chat_id) {
-                if LAST_UPDATE
-                    .lock()
-                    .unwrap()
-                    .get(&chat_id)
-                    .map_or(false, |x| x.elapsed() < MIN_INTERVAL)
+
+        if LAST_UPDATE
+            .lock()
+            .unwrap()
+            .get(&chat_id)
+            .map_or(false, |x| x.elapsed() < MIN_INTERVAL)
+        {
+            cx.reply_to("技能冷却中").await?;
+            return Ok(());
+        }
+
+        if let MessageKind::Common(MessageCommon {
+            forward_kind:
+                ForwardKind::Origin(ForwardOrigin {
+                    reply_to_message: Some(msg),
+                    ..
+                }),
+            ..
+        }) = &cx.update.kind
+        {
+            let mut file_id = msg.sticker().map(|x| x.file_id.clone());
+
+            if file_id.is_none() {
+                file_id = msg
+                    .photo()
+                    .map(|x| {
+                        x.iter()
+                            .max_by_key(|&x| x.file_size)
+                            .map(|x| x.file_id.clone())
+                    })
+                    .flatten();
+            }
+
+            if file_id.is_none() {
+                file_id = file_id!(msg, document);
+            }
+
+            if file_id.is_none() {
+                file_id = file_id!(msg, animation);
+            }
+
+            if let Some(file_id) = file_id {
+                let mut buf = Vec::new();
+                let file = cx.requester.get_file(&file_id).await?;
+                cx.requester
+                    .download_file(&file.file_path, &mut buf)
+                    .await?;
+
+                if file.file_path.ends_with(".webp") {
+                    buf = webp_to_png(buf.as_ref(), color)?;
+                }
+                if file.file_path.ends_with(".mp4") {
+                    buf = mp4_to_png(buf.as_ref())?;
+                }
+
+                match cx
+                    .requester
+                    .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
+                    .await
                 {
-                    cx.reply_to("技能冷却中").await?;
-                    return Ok(());
-                }
-
-                if let MessageKind::Common(common) = &cx.update.kind {
-                    if let ForwardKind::Origin(orig) = &common.forward_kind {
-                        if let Some(msg) = &orig.reply_to_message {
-                            let mut file_id = msg.sticker().map(|x| x.file_id.clone());
-
-                            if file_id.is_none() {
-                                file_id = msg
-                                    .photo()
-                                    .map(|x| {
-                                        x.iter()
-                                            .max_by_key(|&x| x.file_size)
-                                            .map(|x| x.file_id.clone())
-                                    })
-                                    .flatten();
-                            }
-
-                            if file_id.is_none() {
-                                file_id = msg
-                                    .document()
-                                    .filter(|&x| {
-                                        x.thumb.is_some()
-                                            && x.file_size.map_or(false, |x| x <= MAX_FILESIZE)
-                                    })
-                                    .map(|x| x.file_id.clone())
-                            }
-
-                            if file_id.is_none() {
-                                file_id = msg
-                                    .animation()
-                                    .filter(|&x| {
-                                        x.thumb.is_some()
-                                            && x.file_size.map_or(false, |x| x <= MAX_FILESIZE)
-                                    })
-                                    .map(|x| x.file_id.clone())
-                            }
-
-                            if let Some(file_id) = file_id {
-                                let mut buf = Vec::new();
-                                let file = cx.requester.get_file(&file_id).await?;
-                                cx.requester
-                                    .download_file(&file.file_path, &mut buf)
-                                    .await?;
-
-                                if file.file_path.ends_with(".webp") {
-                                    buf = webp_to_png(buf.as_ref(), &background)?;
-                                }
-                                if file.file_path.ends_with(".mp4") {
-                                    buf = mp4_to_png(buf.as_ref())?;
-                                }
-
-                                match cx
-                                    .requester
-                                    .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
-                                    .await
-                                {
-                                    Err(_) => {
-                                        cx.reply_to("出现了预料外的错误").await?;
-                                    }
-                                    Ok(_) => {
-                                        LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
-                                    }
-                                };
-                            } else {
-                                cx.reply_to("未检测到受支持的头像").await?;
-                            }
-                        }
+                    Err(_) => {
+                        cx.reply_to("出现了预料外的错误").await?;
                     }
-                }
+                    Ok(_) => {
+                        LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
+                    }
+                };
+            } else {
+                cx.reply_to("未检测到受支持的头像").await?;
             }
         }
-    };
+        Ok(())
+    }
 
-    Ok(())
+    pub async fn run(cx: Context, command: Self) -> Result<(), Error> {
+        match command {
+            Command::Help => Self::help(cx).await,
+            Command::SetAvatar(color) => Self::set_avatar(&color, cx).await,
+        }
+    }
 }

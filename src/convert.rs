@@ -8,6 +8,8 @@ use opencv::videoio::{VideoCapture, VideoCaptureTrait, CAP_ANY};
 use tempfile::NamedTempFile;
 use webp::Decoder;
 
+use crate::Error;
+
 fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: &str) {
     let background = u32::from_str_radix(background.trim_start_matches('#'), 16)
         .unwrap_or(0xffffff)
@@ -39,7 +41,7 @@ pub fn webp_to_png(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
     Ok(buf)
 }
 
-pub fn mp4_to_png(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn mp4_to_png(data: &[u8]) -> Result<Vec<u8>, Error> {
     let mut temp = NamedTempFile::new()?;
     temp.write_all(data)?;
     let mut video_capture = VideoCapture::from_file(temp.as_ref().to_str().unwrap(), CAP_ANY)?;
