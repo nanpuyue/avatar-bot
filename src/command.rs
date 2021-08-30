@@ -10,7 +10,7 @@ use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, MessageKind};
 use teloxide::utils::command::BotCommand;
 
-use crate::convert::{mp4_to_png, png_to_png, webp_to_png};
+use crate::convert::{mp4_to_png, png_to_png, str_to_color, webp_to_png};
 use crate::Error;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
@@ -113,13 +113,13 @@ impl Command {
                     .await?;
 
                 if file.file_path.ends_with(".webp") {
-                    buf = webp_to_png(buf.as_ref(), color)?;
+                    buf = webp_to_png(buf.as_ref(), str_to_color(color))?;
                 }
                 if file.file_path.ends_with(".mp4") {
                     buf = mp4_to_png(buf.as_ref())?;
                 }
                 if file.file_path.ends_with(".png") {
-                    png_to_png(&mut buf, color)?;
+                    png_to_png(&mut buf, str_to_color(color))?;
                 }
 
                 match cx
