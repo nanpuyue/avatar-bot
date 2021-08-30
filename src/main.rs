@@ -39,7 +39,7 @@ enum Command {
     #[command(rename = "help", description = "显示帮助信息")]
     Help,
     #[command(rename = "set_avatar", description = "设置头像")]
-    SetAvatar,
+    SetAvatar(String),
 }
 
 async fn answer(
@@ -50,7 +50,7 @@ async fn answer(
         Command::Help => {
             cx.answer(Command::descriptions()).await?;
         }
-        Command::SetAvatar => {
+        Command::SetAvatar(background) => {
             let chat_id = cx.chat_id();
             if CHAT_LIST.contains(&chat_id) {
                 if LAST_UPDATE
@@ -107,7 +107,7 @@ async fn answer(
                                     .await?;
 
                                 if file.file_path.ends_with(".webp") {
-                                    buf = webp_to_jpg(buf.as_ref())?;
+                                    buf = webp_to_jpg(buf.as_ref(), &background)?;
                                 }
                                 if file.file_path.ends_with(".mp4") {
                                     buf = mp4_to_jpg(buf.as_ref())?;
