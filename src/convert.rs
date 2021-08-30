@@ -3,7 +3,7 @@ use std::io::Write;
 use image::error::{DecodingError, ImageFormatHint, ImageResult};
 use image::{Bgra, DynamicImage, ImageError, ImageOutputFormat};
 use opencv::core::{Mat, Vector};
-use opencv::imgcodecs::{imencode, ImwriteFlags};
+use opencv::imgcodecs::imencode;
 use opencv::videoio::{VideoCapture, VideoCaptureTrait, CAP_ANY};
 use tempfile::NamedTempFile;
 use webp::Decoder;
@@ -21,7 +21,7 @@ fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: &str) {
     pixel[3] = 255;
 }
 
-pub fn webp_to_jpg(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
+pub fn webp_to_png(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
     let decoder = Decoder::new(data);
     let webp = decoder.decode().ok_or_else(|| {
         ImageError::Decoding(DecodingError::from_format_hint(ImageFormatHint::Name(
@@ -35,11 +35,11 @@ pub fn webp_to_jpg(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
     let image = DynamicImage::ImageBgra8(bgra);
 
     let mut buf = Vec::new();
-    image.write_to(&mut buf, ImageOutputFormat::Jpeg(100))?;
+    image.write_to(&mut buf, ImageOutputFormat::Png)?;
     Ok(buf)
 }
 
-pub fn mp4_to_jpg(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn mp4_to_png(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let mut temp = NamedTempFile::new()?;
     temp.write_all(data)?;
     let mut video_capture = VideoCapture::from_file(temp.as_ref().to_str().unwrap(), CAP_ANY)?;
@@ -48,10 +48,7 @@ pub fn mp4_to_jpg(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Se
     video_capture.read(&mut frame)?;
 
     let mut buf = Vector::new();
-    let mut params = Vector::new();
-    params.push(ImwriteFlags::IMWRITE_JPEG_QUALITY as _);
-    params.push(100);
-    imencode(".jpg", &frame, &mut buf, &params)?;
+    imencode(".png", &frame, &mut buf, &Vector::new())?;
 
     Ok(buf.into())
 }

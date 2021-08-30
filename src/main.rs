@@ -11,7 +11,7 @@ use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, InputFile, MessageKind};
 use teloxide::utils::command::BotCommand;
 
-use crate::convert::{mp4_to_jpg, webp_to_jpg};
+use crate::convert::{mp4_to_png, webp_to_png};
 
 mod convert;
 
@@ -107,10 +107,10 @@ async fn answer(
                                     .await?;
 
                                 if file.file_path.ends_with(".webp") {
-                                    buf = webp_to_jpg(buf.as_ref(), &background)?;
+                                    buf = webp_to_png(buf.as_ref(), &background)?;
                                 }
                                 if file.file_path.ends_with(".mp4") {
-                                    buf = mp4_to_jpg(buf.as_ref())?;
+                                    buf = mp4_to_png(buf.as_ref())?;
                                 }
 
                                 match cx
