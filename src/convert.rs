@@ -1,7 +1,8 @@
 use std::io::Write;
+use std::mem::swap;
 
 use image::error::{DecodingError, ImageFormatHint, ImageResult};
-use image::{Bgra, DynamicImage, ImageError, ImageOutputFormat};
+use image::{load_from_memory, Bgra, DynamicImage, ImageError, ImageOutputFormat};
 use opencv::core::{Mat, Vector};
 use opencv::imgcodecs::imencode;
 use opencv::videoio::{VideoCapture, VideoCaptureTrait, CAP_ANY};
@@ -11,7 +12,7 @@ use webp::Decoder;
 use crate::Error;
 
 fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: &str) {
-    let background = u32::from_str_radix(background.trim_start_matches('#'), 16)
+    let background = u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
         .unwrap_or(0xffffff)
         .to_be_bytes();
 
@@ -23,6 +24,18 @@ fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: &str) {
     pixel[3] = 255;
 }
 
+fn set_background(image: DynamicImage, background: &str) -> DynamicImage {
+    let mut bgra = image.into_bgra8();
+    bgra.pixels_mut().for_each(|x| bgra_to_bgr(x, background));
+    DynamicImage::ImageBgra8(bgra)
+}
+
+fn image_to_png(image: DynamicImage) -> ImageResult<Vec<u8>> {
+    let mut buf = Vec::new();
+    image.write_to(&mut buf, ImageOutputFormat::Png)?;
+    Ok(buf)
+}
+
 pub fn webp_to_png(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
     let decoder = Decoder::new(data);
     let webp = decoder.decode().ok_or_else(|| {
@@ -30,15 +43,24 @@ pub fn webp_to_png(data: &[u8], background: &str) -> ImageResult<Vec<u8>> {
             "webp".to_string(),
         )))
     })?;
-    let image = webp.to_image();
+    let mut image = webp.to_image();
 
-    let mut bgra = image.into_bgra8();
-    bgra.pixels_mut().for_each(|x| bgra_to_bgr(x, background));
-    let image = DynamicImage::ImageBgra8(bgra);
+    if image.color().has_alpha() {
+        image = set_background(image, background)
+    }
 
-    let mut buf = Vec::new();
-    image.write_to(&mut buf, ImageOutputFormat::Png)?;
-    Ok(buf)
+    image_to_png(image)
+}
+
+pub fn png_to_png(data: &mut Vec<u8>, background: &str) -> ImageResult<()> {
+    let mut image = load_from_memory(data)?;
+
+    if image.color().has_alpha() {
+        image = set_background(image, background);
+        swap(data, &mut image_to_png(image)?);
+    }
+
+    Ok(())
 }
 
 pub fn mp4_to_png(data: &[u8]) -> Result<Vec<u8>, Error> {
