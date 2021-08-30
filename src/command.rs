@@ -51,12 +51,12 @@ macro_rules! file_id {
 }
 
 impl Command {
-    async fn help(cx: Context) -> Result<(), Error> {
+    async fn help(cx: &Context) -> Result<(), Error> {
         cx.answer(Command::descriptions()).await?;
         Ok(())
     }
 
-    async fn set_avatar(color: &str, cx: Context) -> Result<(), Error> {
+    async fn set_avatar(color: &str, cx: &Context) -> Result<(), Error> {
         let chat_id = cx.chat_id();
 
         if !CHAT_LIST.contains(&chat_id) {
@@ -122,18 +122,12 @@ impl Command {
                     png_to_png(&mut buf, str_to_color(color))?;
                 }
 
-                match cx
-                    .requester
+                cx.requester
                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
                     .await
-                {
-                    Err(_) => {
-                        cx.reply_to("出现了预料外的错误").await?;
-                    }
-                    Ok(_) => {
+                    .map(|_| {
                         LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
-                    }
-                };
+                    })?;
             } else {
                 cx.reply_to("未检测到受支持的头像").await?;
             }
@@ -143,8 +137,14 @@ impl Command {
 
     pub async fn run(cx: Context, command: Self) -> Result<(), Error> {
         match command {
-            Command::Help => Self::help(cx).await,
-            Command::SetAvatar(color) => Self::set_avatar(&color, cx).await,
+            Command::Help => Self::help(&cx).await,
+            Command::SetAvatar(color) => {
+                let ret = Self::set_avatar(&color, &cx).await;
+                if ret.is_err() {
+                    cx.reply_to("出现了预料外的错误").await?;
+                }
+                ret
+            }
         }
     }
 }
