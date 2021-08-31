@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use lazy_static::lazy_static;
@@ -9,6 +9,7 @@ use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, MessageKind};
 use teloxide::utils::command::BotCommand;
+use tokio::sync::Mutex;
 
 use crate::convert::{mp4_to_png, png_to_png, str_to_color, webp_to_png};
 use crate::Error;
@@ -19,8 +20,8 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
-    pub static ref LAST_UPDATE: Arc<Mutex<HashMap<i64, Instant>>> =
-        Arc::new(Mutex::new(<HashMap<i64, Instant>>::new()));
+    pub static ref LAST_UPDATE: Arc<Mutex<HashMap<i64, Arc<Mutex<Instant>>>>> =
+        Arc::new(Mutex::new(<HashMap<i64, Arc<Mutex<Instant>>>>::new()));
     pub static ref CHAT_LIST: Vec<i64> = {
         let mut chat_list = Vec::new();
         for i in env::var("CHAT_LIST")
@@ -65,12 +66,17 @@ impl Command {
             return Ok(());
         }
 
-        if LAST_UPDATE
-            .lock()
-            .unwrap()
+        let mut last_update = LAST_UPDATE.lock().await;
+        let last_update = last_update
             .get(&chat_id)
-            .map_or(false, |x| x.elapsed() < MIN_INTERVAL)
-        {
+            .map(Clone::clone)
+            .unwrap_or_else(|| {
+                let last = Arc::new(Mutex::new(Instant::now() - MIN_INTERVAL));
+                last_update.insert(chat_id, last.clone());
+                last
+            });
+        let mut last_update = last_update.lock().await;
+        if last_update.elapsed() < MIN_INTERVAL {
             cx.reply_to("技能冷却中").await?;
             return Ok(());
         }
@@ -124,10 +130,8 @@ impl Command {
 
                 cx.requester
                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
-                    .await
-                    .map(|_| {
-                        LAST_UPDATE.lock().unwrap().insert(chat_id, Instant::now());
-                    })?;
+                    .await?;
+                *last_update = Instant::now();
             } else {
                 cx.reply_to("未检测到受支持的头像").await?;
             }
