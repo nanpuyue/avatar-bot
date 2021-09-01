@@ -11,7 +11,8 @@ use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, Mess
 use teloxide::utils::command::BotCommand;
 use tokio::sync::Mutex;
 
-use crate::convert::{mp4_to_png, png_to_png, str_to_color, webp_to_png};
+use crate::ffmpeg::video_to_png;
+use crate::image::{img_to_png, str_to_color, webp_to_png};
 use crate::Error;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
@@ -122,10 +123,10 @@ impl Command {
                     buf = webp_to_png(buf.as_ref(), str_to_color(color))?;
                 }
                 if file.file_path.ends_with(".mp4") {
-                    buf = mp4_to_png(buf.as_ref())?;
+                    buf = video_to_png(buf)?;
                 }
                 if file.file_path.ends_with(".png") {
-                    png_to_png(&mut buf, str_to_color(color))?;
+                    img_to_png(&mut buf, str_to_color(color))?;
                 }
 
                 cx.requester

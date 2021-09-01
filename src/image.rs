@@ -1,15 +1,8 @@
-use std::io::Write;
 use std::mem::swap;
 
 use image::error::{DecodingError, ImageFormatHint, ImageResult};
 use image::{load_from_memory, Bgra, DynamicImage, ImageError, ImageOutputFormat};
-use opencv::core::{Mat, Vector};
-use opencv::imgcodecs::imencode;
-use opencv::videoio::{VideoCapture, VideoCaptureTrait, CAP_ANY};
-use tempfile::NamedTempFile;
 use webp::Decoder;
-
-use crate::Error;
 
 fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: [u8; 4]) {
     let alpha = pixel[3] as i32;
@@ -54,7 +47,7 @@ pub fn webp_to_png(data: &[u8], background: [u8; 4]) -> ImageResult<Vec<u8>> {
     image_to_png(image)
 }
 
-pub fn png_to_png(data: &mut Vec<u8>, background: [u8; 4]) -> ImageResult<()> {
+pub fn img_to_png(data: &mut Vec<u8>, background: [u8; 4]) -> ImageResult<()> {
     let mut image = load_from_memory(data)?;
 
     if image.color().has_alpha() {
@@ -63,18 +56,4 @@ pub fn png_to_png(data: &mut Vec<u8>, background: [u8; 4]) -> ImageResult<()> {
     }
 
     Ok(())
-}
-
-pub fn mp4_to_png(data: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut temp = NamedTempFile::new()?;
-    temp.write_all(data)?;
-    let mut video_capture = VideoCapture::from_file(temp.as_ref().to_str().unwrap(), CAP_ANY)?;
-
-    let mut frame = Mat::default();
-    video_capture.read(&mut frame)?;
-
-    let mut buf = Vector::new();
-    imencode(".png", &frame, &mut buf, &Vector::new())?;
-
-    Ok(buf.into())
 }
