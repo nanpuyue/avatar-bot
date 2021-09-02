@@ -112,6 +112,10 @@ impl Command {
                 file_id = file_id!(msg, animation);
             }
 
+            if file_id.is_none() {
+                file_id = file_id!(msg, video);
+            }
+
             if let Some(file_id) = file_id {
                 let mut buf = Vec::new();
                 let file = cx.requester.get_file(&file_id).await?;
