@@ -1,7 +1,8 @@
 use std::mem::swap;
 
 use image::error::{DecodingError, ImageFormatHint, ImageResult};
-use image::{load_from_memory, Bgra, DynamicImage, ImageError, ImageOutputFormat};
+use image::{guess_format, load_from_memory_with_format};
+use image::{Bgra, DynamicImage, ImageError, ImageFormat, ImageOutputFormat};
 use webp::Decoder;
 
 fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: [u8; 4]) {
@@ -11,6 +12,16 @@ fn bgra_to_bgr(pixel: &mut Bgra<u8>, background: [u8; 4]) {
             ((255 - alpha) * background[3 - i] as i32 / 255 + alpha * pixel[i] as i32 / 255) as u8;
     }
     pixel[3] = 255;
+}
+
+fn load_webp(data: &[u8]) -> ImageResult<DynamicImage> {
+    let decoder = Decoder::new(data);
+    let webp = decoder.decode().ok_or_else(|| {
+        ImageError::Decoding(DecodingError::from_format_hint(ImageFormatHint::Name(
+            "webp".to_string(),
+        )))
+    })?;
+    Ok(webp.to_image())
 }
 
 fn set_background(image: DynamicImage, background: [u8; 4]) -> DynamicImage {
@@ -31,29 +42,17 @@ pub fn str_to_color(str: &str) -> [u8; 4] {
         .to_be_bytes()
 }
 
-pub fn webp_to_png(data: &[u8], background: [u8; 4]) -> ImageResult<Vec<u8>> {
-    let decoder = Decoder::new(data);
-    let webp = decoder.decode().ok_or_else(|| {
-        ImageError::Decoding(DecodingError::from_format_hint(ImageFormatHint::Name(
-            "webp".to_string(),
-        )))
-    })?;
-    let mut image = webp.to_image();
-
-    if image.color().has_alpha() {
-        image = set_background(image, background)
-    }
-
-    image_to_png(image)
-}
-
 pub fn img_to_png(data: &mut Vec<u8>, background: [u8; 4]) -> ImageResult<()> {
-    let mut image = load_from_memory(data)?;
+    let format = guess_format(data)?;
+    let mut image = if format == ImageFormat::WebP {
+        load_webp(data)
+    } else {
+        load_from_memory_with_format(data, format)
+    }?;
 
-    if image.color().has_alpha() {
+    if format != ImageFormat::Png || image.color().has_alpha() {
         image = set_background(image, background);
         swap(data, &mut image_to_png(image)?);
     }
-
     Ok(())
 }

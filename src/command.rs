@@ -12,7 +12,7 @@ use teloxide::utils::command::BotCommand;
 use tokio::sync::Mutex;
 
 use crate::ffmpeg::video_to_png;
-use crate::image::{img_to_png, str_to_color, webp_to_png};
+use crate::image::{img_to_png, str_to_color};
 use crate::Error;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
@@ -123,14 +123,10 @@ impl Command {
                     .download_file(&file.file_path, &mut buf)
                     .await?;
 
-                if file.file_path.ends_with(".webp") {
-                    buf = webp_to_png(buf.as_ref(), str_to_color(color))?;
-                }
-                if file.file_path.ends_with(".mp4") {
-                    buf = video_to_png(buf)?;
-                }
-                if file.file_path.ends_with(".png") {
+                if file.file_path.ends_with(".webp") || file.file_path.ends_with(".png") {
                     img_to_png(&mut buf, str_to_color(color))?;
+                } else if file.file_path.ends_with(".mp4") {
+                    buf = video_to_png(buf)?;
                 }
 
                 cx.requester
