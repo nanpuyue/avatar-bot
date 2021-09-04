@@ -105,7 +105,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
             encode_context.width,
             encode_context.height,
             encode_context.pix_fmt,
-            ffi::SWS_FAST_BILINEAR,
+            ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
         )
         .ok_or("Invalid sws_context parameter")?;
         let image_buffer = AVImage::new(
