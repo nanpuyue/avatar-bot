@@ -10,7 +10,7 @@ use rsmpeg::error::RsmpegError;
 use rsmpeg::ffi;
 use rsmpeg::swscale::SwsContext;
 
-use crate::Error;
+use crate::error::Error;
 
 pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
     let cur1 = Arc::new(AtomicUsize::new(0));

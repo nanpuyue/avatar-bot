@@ -11,9 +11,9 @@ use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, Mess
 use teloxide::utils::command::BotCommand;
 use tokio::sync::Mutex;
 
+use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::{img_to_png, str_to_color};
-use crate::Error;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
 
@@ -123,6 +123,9 @@ impl Command {
             } else {
                 cx.reply_to("未检测到受支持的头像").await?;
             }
+        } else {
+            cx.reply_to("使用 set_avatar 命令时请回复包含头像的消息 (照片、视频、贴纸、文件)")
+                .await?;
         }
         Ok(())
     }
@@ -132,7 +135,11 @@ impl Command {
             Command::Help => Self::help(&cx).await,
             Command::SetAvatar(color) => {
                 let ret = Self::set_avatar(&color, &cx).await;
-                if ret.is_err() {
+                if let Err(e) = &ret {
+                    if let Some(x) = e.message() {
+                        cx.reply_to(x).await?;
+                        return Ok(());
+                    }
                     cx.reply_to("出现了预料外的错误").await?;
                 }
                 ret
