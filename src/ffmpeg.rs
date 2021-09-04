@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::slice;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
@@ -13,7 +13,7 @@ use rsmpeg::swscale::SwsContext;
 use crate::Error;
 
 pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
-    let cur1 = Arc::new(AtomicU64::new(0));
+    let cur1 = Arc::new(AtomicUsize::new(0));
     let cur2 = cur1.clone();
 
     let io_context = AVIOContextCustom::alloc_context(
@@ -21,17 +21,17 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         false,
         data,
         Some(Box::new(move |data, buf| {
-            let cur = cur1.load(Ordering::Relaxed) as usize;
+            let cur = cur1.load(Relaxed);
             if data.len() <= cur {
                 return ffi::AVERROR_EOF;
             }
             let ret = (&data[cur..]).read(buf).unwrap();
-            cur1.store((cur + ret) as u64, Ordering::Relaxed);
+            cur1.store(cur + ret, Relaxed);
             ret as i32
         })),
         None,
         Some(Box::new(move |data, offset, whence| {
-            let cur = cur2.load(Ordering::Relaxed) as i64;
+            let cur = cur2.load(Relaxed) as i64;
             const AVSEEK_SIZE: i32 = ffi::AVSEEK_SIZE as i32;
             let new = match whence {
                 0 => offset,
@@ -42,7 +42,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
             };
 
             if new >= 0 {
-                cur2.store(new as u64, Ordering::Relaxed);
+                cur2.store(new as usize, Relaxed);
             }
             new
         })),
