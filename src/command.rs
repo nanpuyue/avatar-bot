@@ -48,7 +48,7 @@ macro_rules! file_id {
     ($msg:expr, $func:ident) => {
         $msg.$func()
             .filter(|&x| x.thumb.is_some() && x.file_size.map_or(false, |x| x <= MAX_FILESIZE))
-            .map(|x| x.file_id.clone())
+            .map(|x| &x.file_id)
     };
 }
 
@@ -91,34 +91,21 @@ impl Command {
             ..
         }) = &cx.update.kind
         {
-            let mut file_id = msg.sticker().map(|x| x.file_id.clone());
-
-            if file_id.is_none() {
-                file_id = msg
-                    .photo()
-                    .map(|x| {
-                        x.iter()
-                            .max_by_key(|&x| x.file_size)
-                            .map(|x| x.file_id.clone())
-                    })
-                    .flatten();
-            }
-
-            if file_id.is_none() {
-                file_id = file_id!(msg, document);
-            }
-
-            if file_id.is_none() {
-                file_id = file_id!(msg, animation);
-            }
-
-            if file_id.is_none() {
-                file_id = file_id!(msg, video);
-            }
+            let file_id = msg
+                .sticker()
+                .map(|x| &x.file_id)
+                .or_else(|| {
+                    msg.photo()
+                        .map(|x| x.iter().max_by_key(|&x| x.file_size).map(|x| &x.file_id))
+                        .flatten()
+                })
+                .or_else(|| file_id!(msg, document))
+                .or_else(|| file_id!(msg, animation))
+                .or_else(|| file_id!(msg, video));
 
             if let Some(file_id) = file_id {
                 let mut buf = Vec::new();
-                let file = cx.requester.get_file(&file_id).await?;
+                let file = cx.requester.get_file(file_id).await?;
                 cx.requester
                     .download_file(&file.file_path, &mut buf)
                     .await?;
