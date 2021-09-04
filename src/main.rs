@@ -1,5 +1,6 @@
 use std::env;
 
+use rsmpeg::ffi;
 use teloxide::prelude::*;
 
 use crate::command::{Command, CHAT_LIST};
@@ -13,6 +14,7 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 #[tokio::main]
 async fn main() {
     teloxide::enable_logging!();
+    unsafe { ffi::av_log_set_level(ffi::AV_LOG_ERROR as i32) };
 
     let bot_token = env::var("BOT_TOKEN").expect("Please set the environment variable BOT_TOKEN");
     let bot_name = env::var("BOT_NAME").expect("Please set the environment variable BOT_NAME");
