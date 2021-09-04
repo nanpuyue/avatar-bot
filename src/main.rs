@@ -6,10 +6,9 @@ use teloxide::prelude::*;
 use crate::command::{Command, CHAT_LIST};
 
 mod command;
+mod error;
 mod ffmpeg;
 mod image;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() {
