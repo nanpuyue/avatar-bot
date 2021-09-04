@@ -32,10 +32,12 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         None,
         Some(Box::new(move |data, offset, whence| {
             let cur = cur2.load(Ordering::Relaxed) as i64;
+            const AVSEEK_SIZE: i32 = ffi::AVSEEK_SIZE as i32;
             let new = match whence {
                 0 => offset,
                 1 => cur + offset,
                 2 => data.len() as i64 + offset,
+                AVSEEK_SIZE => return data.len() as i64,
                 _ => -1,
             };
 
