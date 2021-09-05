@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use lazy_static::lazy_static;
@@ -21,8 +20,8 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
-    pub static ref LAST_UPDATE: Arc<Mutex<HashMap<i64, Arc<Mutex<Instant>>>>> =
-        Arc::new(Mutex::new(<HashMap<i64, Arc<Mutex<Instant>>>>::new()));
+    pub static ref LAST_UPDATE: Mutex<HashMap<i64, Mutex<Instant>>> =
+        Mutex::new(<HashMap<i64, Mutex<Instant>>>::new());
     pub static ref CHAT_LIST: Vec<i64> = {
         let mut chat_list = Vec::new();
         for i in env::var("CHAT_LIST")
@@ -68,16 +67,12 @@ impl Command {
         }
 
         let mut last_update = LAST_UPDATE.lock().await;
-        let last_update = last_update
-            .get(&chat_id)
-            .map(Clone::clone)
-            .unwrap_or_else(|| {
-                let last = Arc::new(Mutex::new(Instant::now() - MIN_INTERVAL));
-                last_update.insert(chat_id, last.clone());
-                last
-            });
-        let mut last_update = last_update.lock().await;
-        if last_update.elapsed() < MIN_INTERVAL {
+        let mut chat_last_update = last_update
+            .entry(chat_id)
+            .or_insert_with(|| Mutex::new(Instant::now() - MIN_INTERVAL))
+            .lock()
+            .await;
+        if chat_last_update.elapsed() < MIN_INTERVAL {
             cx.reply_to("技能冷却中").await?;
             return Ok(());
         }
@@ -119,7 +114,7 @@ impl Command {
                 cx.requester
                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
                     .await?;
-                *last_update = Instant::now();
+                *chat_last_update = Instant::now();
             } else {
                 cx.reply_to("未检测到受支持的头像").await?;
             }
