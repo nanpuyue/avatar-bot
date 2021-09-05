@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
-use crate::image::{img_to_png, str_to_color};
+use crate::image::image_to_png;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
 
@@ -111,7 +111,7 @@ impl Command {
                     .await?;
 
                 if file.file_path.ends_with(".webp") || file.file_path.ends_with(".png") {
-                    img_to_png(&mut buf, str_to_color(color))?;
+                    image_to_png(&mut buf, color)?;
                 } else if file.file_path.ends_with(".mp4") {
                     buf = video_to_png(buf)?;
                 }
