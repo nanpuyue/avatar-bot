@@ -20,17 +20,21 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
-    pub static ref LAST_UPDATE: Mutex<HashMap<i64, Mutex<Instant>>> =
-        Mutex::new(<HashMap<i64, Mutex<Instant>>>::new());
-    pub static ref CHAT_LIST: Vec<i64> = {
-        let mut chat_list = Vec::new();
+    pub static ref LAST_UPDATE: Mutex<HashMap<i64, Mutex<Instant>>> = {
+        let mut last_update = <HashMap<i64, Mutex<Instant>>>::new();
+        let last = Instant::now() - MIN_INTERVAL;
+
         for i in env::var("CHAT_LIST")
             .expect("Please set the environment variable CHAT_LIST")
             .split(',')
         {
-            chat_list.push(i64::from_str(i).expect("Parsing CHAT_LIST failed"));
+            last_update.insert(
+                i64::from_str(i).expect("Parsing CHAT_LIST failed"),
+                Mutex::new(last),
+            );
         }
-        chat_list
+
+        Mutex::new(last_update)
     };
 }
 
@@ -60,18 +64,14 @@ impl Command {
     async fn set_avatar(color: &str, cx: &Context) -> Result<(), Error> {
         let chat_id = cx.chat_id();
 
-        if !CHAT_LIST.contains(&chat_id) {
+        let last_update = LAST_UPDATE.lock().await;
+        let mut chat_last_update = if let Some(x) = last_update.get(&chat_id) {
+            x.lock().await
+        } else {
             cx.reply_to(format!("尚未向本群组 ({}) 提供服务", chat_id))
                 .await?;
             return Ok(());
-        }
-
-        let mut last_update = LAST_UPDATE.lock().await;
-        let mut chat_last_update = last_update
-            .entry(chat_id)
-            .or_insert_with(|| Mutex::new(Instant::now() - MIN_INTERVAL))
-            .lock()
-            .await;
+        };
         if chat_last_update.elapsed() < MIN_INTERVAL {
             cx.reply_to("技能冷却中").await?;
             return Ok(());
