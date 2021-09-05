@@ -13,13 +13,13 @@ ZLIB_SRC="zlib-${ZLIB_VERSION}.tar.xz"
 OPENSSL_SRC="openssl-${OPENSSL_VERSION}.tar.gz"
 FFMPEG_SRC="ffmpeg-${FFMPEG_VERSION}.tar.xz"
 
+apt update
+apt install -y --no-install-recommends make musl{,-dev,-tools} nasm pkg-config wget xz-utils zstd
+
 [ -d /build ] || mkdir -p /build
 wget "https://zlib.net/${ZLIB_SRC}" -O "/build/${ZLIB_SRC}"
 wget "https://www.openssl.org/source/${OPENSSL_SRC}" -O "/build/${OPENSSL_SRC}"
 wget "https://ffmpeg.org/releases/${FFMPEG_SRC}" -O "/build/${FFMPEG_SRC}"
-
-apt update
-apt install -y musl musl-dev musl-tools zstd nasm
 
 wget "https://archlinux.org/packages/community/x86_64/kernel-headers-musl/download" -O "/build/kernel-headers-musl.tar.zst"
 [ -d "${MUSL_DIR}" ] || mkdir -p "${MUSL_DIR}"
