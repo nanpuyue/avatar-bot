@@ -1,10 +1,14 @@
-FROM rust:latest as builder
+FROM rust:slim as builder
 ADD build.sh /
 RUN /build.sh
 
-FROM rust:latest
+FROM rust:slim
+SHELL ["/bin/bash", "-c"]
+
 COPY --from=builder /opt/musl /opt/musl
-RUN apt update && apt install -y musl musl-dev musl-tools libclang-dev && apt clean &&\
+RUN apt update &&\
+ apt install -y --no-install-recommends make musl{,-dev,-tools} pkg-config libclang-dev &&\
+ apt clean &&\
  rustup target add x86_64-unknown-linux-musl
 
 ENV CC="musl-gcc"
