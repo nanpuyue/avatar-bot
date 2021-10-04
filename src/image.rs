@@ -19,18 +19,22 @@ fn trans_flag(img: &mut ImageBuffer<Bgra<u8>, Vec<u8>>) {
         [0xfa, 0xce, 0x5b],
     ];
 
-    let height = img.height();
+    let mut height = img.height();
+    let weight = img.width();
 
     let mut color_index = 0;
-    let mut passed = 0;
+    let mut passed = height.saturating_sub(weight) / 2;
+    height -= passed;
     img.enumerate_rows_mut().for_each(|(row_index, row)| {
-        if color_index < 4 && (row_index - passed) * (5 - color_index) > height - passed {
-            color_index += 1;
-            passed = row_index;
+        if row_index >= passed && row_index <= height {
+            if color_index < 4 && (row_index - passed) * (5 - color_index) > height - passed {
+                color_index += 1;
+                passed = row_index;
+            }
+            let b = COLOR[color_index as usize];
+            row.filter(|(_, _, x)| x[3] != 255)
+                .for_each(|(_, _, x)| alpha_composit(x, b))
         }
-        let b = COLOR[color_index as usize];
-        row.filter(|(_, _, x)| x[3] != 255)
-            .for_each(|(_, _, x)| alpha_composit(x, b))
     });
 }
 
