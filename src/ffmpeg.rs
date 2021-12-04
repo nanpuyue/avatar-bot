@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 use rsmpeg::avformat::{AVFormatContextInput, AVIOContextContainer, AVIOContextCustom};
-use rsmpeg::avutil::{av_inv_q, AVFrameWithImage, AVImage, AVMem};
+use rsmpeg::avutil::{AVFrameWithImage, AVImage, AVMem};
 use rsmpeg::error::RsmpegError;
 use rsmpeg::ffi;
 use rsmpeg::swscale::SwsContext;
@@ -92,7 +92,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         encode_context.set_bit_rate(decode_context.bit_rate);
         encode_context.set_width(decode_context.width);
         encode_context.set_height(decode_context.height);
-        encode_context.set_time_base(av_inv_q(decode_context.framerate));
+        encode_context.set_time_base(ffi::AVRational { num: 1, den: 1 });
         encode_context.set_pix_fmt(encoder.pix_fmts().map_or(decode_context.pix_fmt, |x| x[0]));
         encode_context.open(None)?;
 
