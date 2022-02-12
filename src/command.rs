@@ -107,7 +107,7 @@ impl Command {
 
                 if file.file_path.ends_with(".webp") || file.file_path.ends_with(".png") {
                     image_to_png(&mut buf, color)?;
-                } else if file.file_path.ends_with(".mp4") {
+                } else if file.file_path.ends_with(".mp4") || file.file_path.ends_with(".webm") {
                     buf = video_to_png(buf)?;
                 }
 
