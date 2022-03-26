@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::io::Read;
 use std::slice;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -52,11 +53,21 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         AVFormatContextInput::from_io_context(AVIOContextContainer::Custom(io_context))?;
 
     let (video_stream_index, mut decode_context) = {
-        let (stream_index, decoder) = input_format_context
+        let (stream_index, mut decoder) = input_format_context
             .find_best_stream(ffi::AVMediaType_AVMEDIA_TYPE_VIDEO)?
             .ok_or("Failed to find the best stream")?;
-
         let stream = input_format_context.streams().get(stream_index).unwrap();
+
+        if decoder.name().to_str() == Ok("vp9") {
+            decoder = AVCodec::find_decoder_by_name(unsafe {
+                CStr::from_bytes_with_nul_unchecked(b"libvpx-vp9\0")
+            })
+            .unwrap_or_else(|| {
+                eprintln!("the decoder is not found: libvpx-vp9");
+                decoder
+            });
+        }
+
         let mut decode_context = AVCodecContext::new(&decoder);
         decode_context.apply_codecpar(stream.codecpar())?;
         decode_context.open(None)?;
@@ -93,7 +104,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         encode_context.set_width(decode_context.width);
         encode_context.set_height(decode_context.height);
         encode_context.set_time_base(ffi::AVRational { num: 1, den: 1 });
-        encode_context.set_pix_fmt(encoder.pix_fmts().map_or(decode_context.pix_fmt, |x| x[0]));
+        encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
         encode_context.open(None)?;
 
         encode_context
