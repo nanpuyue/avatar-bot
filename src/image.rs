@@ -1,22 +1,24 @@
+use std::io::Cursor;
+
 use image::error::{DecodingError, ImageFormatHint, ImageResult};
 use image::{guess_format, load_from_memory_with_format};
-use image::{Bgra, DynamicImage, ImageBuffer, ImageError, ImageFormat, ImageOutputFormat};
+use image::{DynamicImage, ImageBuffer, ImageError, ImageFormat, ImageOutputFormat, Rgba};
 use webp::Decoder;
 
-fn alpha_composit(pixel: &mut Bgra<u8>, color: [i32; 3]) {
+fn alpha_composit(pixel: &mut Rgba<u8>, color: [i32; 3]) {
     for i in 0..3 {
         pixel[i] = (color[i] + (pixel[i] as i32 - color[i]) * pixel[3] as i32 / 255) as u8;
     }
     pixel[3] = 255;
 }
 
-fn trans_flag(img: &mut ImageBuffer<Bgra<u8>, Vec<u8>>) {
+fn trans_flag(img: &mut ImageBuffer<Rgba<u8>, Vec<u8>>) {
     const COLOR: [[i32; 3]; 5] = [
-        [0xfa, 0xce, 0x5b],
-        [0xb8, 0xa9, 0xf5],
+        [0x5b, 0xce, 0xfa],
+        [0xf5, 0xa9, 0xb8],
         [0xff, 0xff, 0xff],
-        [0xb8, 0xa9, 0xf5],
-        [0xfa, 0xce, 0x5b],
+        [0xf5, 0xa9, 0xb8],
+        [0x5b, 0xce, 0xfa],
     ];
 
     let mut height = img.height();
@@ -52,26 +54,25 @@ pub fn image_to_png(data: &mut Vec<u8>, background: &str) -> ImageResult<()> {
     };
 
     if image.color().has_alpha() {
-        let mut bgra = image.into_bgra8();
+        let mut rgba = image.into_rgba8();
 
         if background == "trans" {
-            trans_flag(&mut bgra);
+            trans_flag(&mut rgba);
         } else {
-            let b = u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
+            let [_, b @ ..] = u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
                 .unwrap_or(0xffffff)
-                .to_le_bytes();
-            let b = [b[0] as i32, b[1] as _, b[2] as _];
+                .to_be_bytes()
+                .map(|x| x as _);
 
-            bgra.pixels_mut()
+            rgba.pixels_mut()
                 .filter(|x| x[3] != 255)
                 .for_each(|x| alpha_composit(x, b));
         }
 
-        image = DynamicImage::ImageBgra8(bgra);
+        image = DynamicImage::ImageRgba8(rgba);
     } else if format == ImageFormat::Png {
         return Ok(());
     }
 
-    data.clear();
-    image.write_to(data, ImageOutputFormat::Png)
+    image.write_to(&mut Cursor::new(data), ImageOutputFormat::Png)
 }
