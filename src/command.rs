@@ -6,13 +6,17 @@ use std::time::{Duration, Instant};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
-use teloxide::types::{ForwardKind, ForwardOrigin, InputFile, MessageCommon, MessageKind};
+use teloxide::types::{
+    ForwardKind, ForwardOrigin, InputFile, MessageCommon, MessageEntity, MessageEntityKind,
+    MessageKind,
+};
 use teloxide::utils::command::BotCommand;
 use tokio::sync::Mutex;
 
 use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::image_to_png;
+use crate::opengraph::link_to_img;
 
 type Context = UpdateWithCx<AutoSend<Bot>, Message>;
 
@@ -98,7 +102,7 @@ impl Command {
                 .or_else(|| file_id!(msg, animation))
                 .or_else(|| file_id!(msg, video));
 
-            if let Some(file_id) = file_id {
+            let image = if let Some(file_id) = file_id {
                 let mut buf = Vec::new();
                 let file = cx.requester.get_file(file_id).await?;
                 cx.requester
@@ -112,6 +116,23 @@ impl Command {
                     image_to_png(&mut buf, color)?;
                 }
 
+                Some(buf)
+            } else if let Some(
+                [MessageEntity {
+                    kind: MessageEntityKind::Url,
+                    offset,
+                    length,
+                }, ..],
+            ) = msg.entities()
+            {
+                let url = &msg.text().unwrap()[*offset..*offset + *length];
+
+                link_to_img(url).await?
+            } else {
+                None
+            };
+
+            if let Some(buf) = image {
                 cx.requester
                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
                     .await?;
