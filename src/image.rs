@@ -80,17 +80,18 @@ pub fn image_to_png(data: &mut Vec<u8>, background: &str, align: Option<&str>) -
         }
     }
 
-    if background == "trans" {
-        trans_flag(&mut rgba);
-    } else {
-        let [_, b @ ..] = u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
-            .unwrap_or(0xffffff)
-            .to_be_bytes()
-            .map(|x| x as _);
+    match background {
+        "tr" | "trans" => trans_flag(&mut rgba),
+        _ => {
+            let [_, b @ ..] = u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
+                .unwrap_or(0xffffff)
+                .to_be_bytes()
+                .map(|x| x as _);
 
-        rgba.pixels_mut()
-            .filter(|x| x[3] != 255)
-            .for_each(|x| alpha_composit(x, b));
+            rgba.pixels_mut()
+                .filter(|x| x[3] != 255)
+                .for_each(|x| alpha_composit(x, b));
+        }
     }
 
     DynamicImage::ImageRgba8(rgba).write_to(&mut Cursor::new(data), ImageOutputFormat::Png)
