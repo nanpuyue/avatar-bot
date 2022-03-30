@@ -65,7 +65,7 @@ impl Command {
         Ok(())
     }
 
-    async fn set_avatar(color: &str, cx: &Context) -> Result<(), Error> {
+    async fn set_avatar(color: &str, align: Option<&str>, cx: &Context) -> Result<(), Error> {
         let chat_id = cx.chat_id();
 
         let last_update = LAST_UPDATE.lock().await;
@@ -109,11 +109,8 @@ impl Command {
                     .download_file(&file.file_path, &mut buf)
                     .await?;
 
-                if file.file_path.ends_with(".webp") || file.file_path.ends_with(".png") {
-                    image_to_png(&mut buf, color)?;
-                } else if file.file_path.ends_with(".mp4") || file.file_path.ends_with(".webm") {
+                if file.file_path.ends_with(".mp4") || file.file_path.ends_with(".webm") {
                     buf = video_to_png(buf)?;
-                    image_to_png(&mut buf, color)?;
                 }
 
                 Some(buf)
@@ -132,7 +129,8 @@ impl Command {
                 None
             };
 
-            if let Some(buf) = image {
+            if let Some(mut buf) = image {
+                image_to_png(&mut buf, color, align)?;
                 cx.requester
                     .set_chat_photo(chat_id, InputFile::memory("avatar.file", buf))
                     .await?;
@@ -150,8 +148,25 @@ impl Command {
     pub async fn run(cx: Context, command: Self) -> Result<(), Error> {
         match command {
             Command::Help => Self::help(&cx).await,
-            Command::SetAvatar(color) => {
-                let ret = Self::set_avatar(&color, &cx).await;
+            Command::SetAvatar(args) => {
+                let mut args = args.split(' ');
+                let mut align = None;
+                let mut color = "";
+                let next = args.next().unwrap_or_default();
+                match next {
+                    "" => {}
+                    "t" | "top" | "b" | "bottom" => align = Some(next),
+                    x => {
+                        color = x;
+                        let next = args.next().unwrap_or_default();
+                        match next {
+                            "t" | "top" | "b" | "bottom" => align = Some(next),
+                            _ => {}
+                        }
+                    }
+                }
+
+                let ret = Self::set_avatar(color, align, &cx).await;
                 if let Err(e) = &ret {
                     if let Some(x) = e.message() {
                         cx.reply_to(x).await?;
