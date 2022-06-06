@@ -5,7 +5,7 @@ export MUSL_DIR="/opt/musl"
 export CFLAGS="-I${MUSL_DIR}/include"
 export LDFLAGS="-L${MUSL_DIR}/lib"
 
-ZLIB_VERSION="1.2.11"
+ZLIB_VERSION="1.2.12"
 OPENSSL_VERSION="1.1.1l"
 FFMPEG_VERSION="4.4"
 VPX_VERSION="1.11.0"
