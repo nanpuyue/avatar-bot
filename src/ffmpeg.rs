@@ -69,7 +69,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
         }
 
         let mut decode_context = AVCodecContext::new(&decoder);
-        decode_context.apply_codecpar(stream.codecpar())?;
+        decode_context.apply_codecpar(&stream.codecpar())?;
         decode_context.open(None)?;
 
         (stream_index, decode_context)
