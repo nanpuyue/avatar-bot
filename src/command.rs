@@ -49,7 +49,7 @@ pub enum Command {
 macro_rules! file_id {
     ($msg:expr, $func:ident) => {
         $msg.$func()
-            .filter(|&x| x.thumb.is_some() && x.file_size.map_or(false, |x| x <= MAX_FILESIZE))
+            .filter(|&x| x.thumb.is_some() && x.file_size <= MAX_FILESIZE)
             .map(|x| &x.file_id)
     };
 }
