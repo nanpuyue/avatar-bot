@@ -1,10 +1,9 @@
 use std::io::Cursor;
 
-use image::error::{DecodingError, ImageFormatHint, ImageResult};
-use image::{guess_format, load_from_memory_with_format};
-use image::{DynamicImage, ImageBuffer, ImageError, ImageFormat, ImageOutputFormat, Rgba};
+use image::error::ImageResult;
+use image::load_from_memory;
+use image::{DynamicImage, ImageBuffer, ImageOutputFormat, Rgba};
 use image::{GenericImage, Pixel};
-use webp::Decoder;
 
 fn alpha_composit(pixel: &mut Rgba<u8>, color: [i32; 3]) {
     for i in 0..3 {
@@ -61,17 +60,7 @@ fn square_image<P: Pixel<Subpixel = u8> + 'static>(
 }
 
 pub fn image_to_png(data: &mut Vec<u8>, background: &str, align: Option<&str>) -> ImageResult<()> {
-    let format = guess_format(data)?;
-    let image = if format == ImageFormat::WebP {
-        let webp = Decoder::new(data).decode().ok_or_else(|| {
-            ImageError::Decoding(DecodingError::from_format_hint(ImageFormatHint::Exact(
-                ImageFormat::WebP,
-            )))
-        })?;
-        webp.to_image()
-    } else {
-        load_from_memory_with_format(data, format)?
-    };
+    let image = load_from_memory(data)?;
 
     let mut rgba = image.into_rgba8();
     if let Some(align) = align {
