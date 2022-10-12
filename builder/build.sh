@@ -1,9 +1,14 @@
-#!/bin/bash -e
+#!/bin/bash -ex
 
 export CC="musl-gcc"
 export MUSL_DIR="/opt/musl"
-export CFLAGS="-I${MUSL_DIR}/include"
 export LDFLAGS="-L${MUSL_DIR}/lib"
+
+CFLAGS="-I${MUSL_DIR}/include"
+if [ "$TARGET_ARCH" = "aarch64" ]; then
+  CFLAGS+=" -mno-outline-atomics"
+fi
+export CFLAGS
 
 ZLIB_VERSION="1.2.12"
 OPENSSL_VERSION="1.1.1l"
@@ -26,7 +31,7 @@ wget "https://github.com/webmproject/libvpx/archive/refs/tags/v${VPX_VERSION}.ta
 
 wget "https://archlinux.org/packages/community/x86_64/kernel-headers-musl/download" -O "/build/kernel-headers-musl.tar.zst"
 [ -d "${MUSL_DIR}" ] || mkdir -p "${MUSL_DIR}"
-tar -C "${MUSL_DIR}" -xf "/build/kernel-headers-musl.tar.zst" --transform 's|usr/lib/musl||' usr/lib/musl
+tar -C "${MUSL_DIR}" -xf "/build/kernel-headers-musl.tar.zst" --transform 's|usr/lib/musl||' --wildcards 'usr/lib/musl/include/*/mman.h' 'usr/lib/musl/include/asm-generic'
 
 tar -C /build -xf "/build/${ZLIB_SRC}"
 cd "/build/zlib-${ZLIB_VERSION}"
@@ -35,7 +40,7 @@ make -j$(nproc) install
 
 tar -C /build -xf "/build/${OPENSSL_SRC}"
 cd "/build/openssl-${OPENSSL_VERSION}"
-./Configure --prefix="${MUSL_DIR}" --openssldir=/etc/ssl --libdir=lib linux-x86_64
+./Configure --prefix="${MUSL_DIR}" --openssldir=/etc/ssl --libdir=lib "linux-${TARGET_ARCH}"
 make -j$(nproc) install_dev
 
 tar -C /build -xf "/build/${VPX_SRC}"
