@@ -21,6 +21,6 @@ async fn main() {
     let bot_token = env::var("BOT_TOKEN").expect("Please set the environment variable BOT_TOKEN");
     lazy_static::initialize(&LAST_UPDATE);
 
-    let bot = Bot::new(bot_token).auto_send();
+    let bot = Bot::new(bot_token);
     teloxide::commands_repl(bot, Command::run, Command::ty()).await;
 }

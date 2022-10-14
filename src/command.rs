@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::env;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
+use std::{env, io};
 
 use lazy_static::lazy_static;
 use teloxide::net::Download;
@@ -38,19 +38,19 @@ lazy_static! {
 }
 
 #[derive(BotCommands, Clone)]
-#[command(rename = "snake_case", description = "本 bot 支持如下命令:")]
+#[command(description = "本 bot 支持如下命令:")]
 pub enum Command {
-    #[command(description = "显示帮助信息")]
+    #[command(rename = "help", description = "显示帮助信息")]
     Help,
-    #[command(description = "设置头像")]
+    #[command(rename = "set_avatar", description = "设置头像")]
     SetAvatar(String),
 }
 
 macro_rules! file_id {
     ($msg:expr, $func:ident) => {
         $msg.$func()
-            .filter(|&x| x.thumb.is_some() && x.file_size <= MAX_FILESIZE)
-            .map(|x| &x.file_id)
+            .filter(|&x| x.thumb.is_some() && x.file.size <= MAX_FILESIZE)
+            .map(|x| &x.file.id)
     };
 }
 
@@ -58,7 +58,7 @@ impl Command {
     async fn set_avatar(
         color: &str,
         align: Option<&str>,
-        bot: &AutoSend<Bot>,
+        bot: &Bot,
         message: &Message,
     ) -> Result<(), Error> {
         let chat_id = message.chat.id;
@@ -83,10 +83,10 @@ impl Command {
         {
             let file_id = msg
                 .sticker()
-                .map(|x| &x.file_id)
+                .map(|x| &x.file.id)
                 .or_else(|| {
                     msg.photo()
-                        .and_then(|x| x.iter().max_by_key(|&x| x.file_size).map(|x| &x.file_id))
+                        .and_then(|x| x.iter().max_by_key(|&x| x.file.size).map(|x| &x.file.id))
                 })
                 .or_else(|| file_id!(msg, document))
                 .or_else(|| file_id!(msg, animation))
@@ -95,9 +95,9 @@ impl Command {
             let image = if let Some(file_id) = file_id {
                 let mut buf = Vec::new();
                 let file = bot.get_file(file_id).await?;
-                bot.download_file(&file.file_path, &mut buf).await?;
+                bot.download_file(&file.path, &mut buf).await?;
 
-                if file.file_path.ends_with(".mp4") || file.file_path.ends_with(".webm") {
+                if file.path.ends_with(".mp4") || file.path.ends_with(".webm") {
                     buf = video_to_png(buf)?;
                 }
 
@@ -134,7 +134,7 @@ impl Command {
         Ok(())
     }
 
-    pub async fn run(bot: AutoSend<Bot>, message: Message, command: Self) -> Result<(), Error> {
+    pub async fn run(bot: Bot, message: Message, command: Self) -> ResponseResult<()> {
         let chat_id = message.chat.id;
         match command {
             Command::Help => {
@@ -160,15 +160,17 @@ impl Command {
                     }
                 }
 
-                let ret = Self::set_avatar(color, align, &bot, &message).await;
-                if let Err(e) = &ret {
-                    if let Some(x) = e.message() {
-                        bot.send_message(chat_id, x).await?;
-                        return Ok(());
+                match Self::set_avatar(color, align, &bot, &message).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        if let Some(x) = e.message() {
+                            bot.send_message(chat_id, x).await?;
+                            return Ok(());
+                        }
+                        bot.send_message(chat_id, "出现了预料外的错误").await?;
+                        Err(io::Error::new(io::ErrorKind::Other, e).into())
                     }
-                    bot.send_message(chat_id, "出现了预料外的错误").await?;
                 }
-                ret
             }
         }
     }
