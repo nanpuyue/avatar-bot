@@ -10,21 +10,21 @@ if [ "$TARGET_ARCH" = "aarch64" ]; then
 fi
 export CFLAGS
 
-ZLIB_VERSION="1.2.12"
-OPENSSL_VERSION="1.1.1l"
-FFMPEG_VERSION="4.4"
-VPX_VERSION="1.11.0"
+ZLIB_VERSION="1.2.13"
+OPENSSL_VERSION="3.0.7"
+FFMPEG_VERSION="5.1.2"
+VPX_VERSION="1.12.0"
 
-ZLIB_SRC="zlib-${ZLIB_VERSION}.tar.xz"
+ZLIB_SRC="zlib-${ZLIB_VERSION}.tar.gz"
 OPENSSL_SRC="openssl-${OPENSSL_VERSION}.tar.gz"
 FFMPEG_SRC="ffmpeg-${FFMPEG_VERSION}.tar.xz"
 VPX_SRC="libvpx-${VPX_VERSION}.tar.gz"
 
 apt update
-apt install -y --no-install-recommends g++ make musl{,-dev,-tools} nasm pkg-config wget xz-utils zstd
+apt install -y --no-install-recommends gcc g++ make musl{,-dev,-tools} nasm pkg-config wget xz-utils zstd
 
 [ -d /build ] || mkdir -p /build
-wget "https://zlib.net/${ZLIB_SRC}" -O "/build/${ZLIB_SRC}"
+wget "https://zlib.net/fossils/${ZLIB_SRC}" -O "/build/${ZLIB_SRC}"
 wget "https://www.openssl.org/source/${OPENSSL_SRC}" -O "/build/${OPENSSL_SRC}"
 wget "https://ffmpeg.org/releases/${FFMPEG_SRC}" -O "/build/${FFMPEG_SRC}"
 wget "https://github.com/webmproject/libvpx/archive/refs/tags/v${VPX_VERSION}.tar.gz" -O "/build/${VPX_SRC}"
@@ -35,7 +35,7 @@ tar -C "${MUSL_DIR}" -xf "/build/kernel-headers-musl.tar.zst" --transform 's|usr
 
 tar -C /build -xf "/build/${ZLIB_SRC}"
 cd "/build/zlib-${ZLIB_VERSION}"
-./configure --prefix="${MUSL_DIR}" --static --64
+./configure --prefix="${MUSL_DIR}" --static
 make -j$(nproc) install
 
 tar -C /build -xf "/build/${OPENSSL_SRC}"
