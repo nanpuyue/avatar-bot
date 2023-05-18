@@ -2,7 +2,6 @@ use std::env;
 
 use rsmpeg::ffi;
 use teloxide::prelude::*;
-use teloxide::utils::command::BotCommands;
 
 use crate::command::{Command, LAST_UPDATE};
 
@@ -11,6 +10,8 @@ mod error;
 mod ffmpeg;
 mod image;
 mod opengraph;
+
+static mut BOT_NAME: String = String::new();
 
 #[tokio::main]
 async fn main() {
@@ -22,5 +23,13 @@ async fn main() {
     lazy_static::initialize(&LAST_UPDATE);
 
     let bot = Bot::new(bot_token);
-    teloxide::commands_repl(bot, Command::run, Command::ty()).await;
+    unsafe {
+        BOT_NAME = bot
+            .get_me()
+            .await
+            .expect("Failed to get the bot username")
+            .username()
+            .into();
+    }
+    teloxide::repl(bot, Command::run).await;
 }

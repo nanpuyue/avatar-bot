@@ -14,6 +14,7 @@ use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::image_to_png;
 use crate::opengraph::link_to_img;
+use crate::BOT_NAME;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
@@ -134,8 +135,14 @@ impl Command {
         Ok(())
     }
 
-    pub async fn run(bot: Bot, message: Message, command: Self) -> ResponseResult<()> {
+    pub async fn run(bot: Bot, message: Message) -> ResponseResult<()> {
+        let bot_name = unsafe { BOT_NAME.as_str() };
+        let command = match message.text().map(|x| BotCommands::parse(x, bot_name)) {
+            Some(Ok(x)) => x,
+            _ => return Ok(()),
+        };
         let chat_id = message.chat.id;
+
         match command {
             Command::Help => {
                 bot.send_message(chat_id, Command::descriptions().to_string())
