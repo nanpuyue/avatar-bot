@@ -1,5 +1,6 @@
 FROM rust:slim as builder
 ARG TARGET_ARCH=x86_64
+RUN apt update && apt install -y perl-modules
 ADD build.sh /
 RUN /build.sh
 

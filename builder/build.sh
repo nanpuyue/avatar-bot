@@ -29,7 +29,7 @@ wget "https://www.openssl.org/source/${OPENSSL_SRC}" -O "/build/${OPENSSL_SRC}"
 wget "https://ffmpeg.org/releases/${FFMPEG_SRC}" -O "/build/${FFMPEG_SRC}"
 wget "https://github.com/webmproject/libvpx/archive/refs/tags/v${VPX_VERSION}.tar.gz" -O "/build/${VPX_SRC}"
 
-wget "https://archlinux.org/packages/community/x86_64/kernel-headers-musl/download" -O "/build/kernel-headers-musl.tar.zst"
+wget "https://archlinux.org/packages/extra/x86_64/kernel-headers-musl/download/" -O "/build/kernel-headers-musl.tar.zst"
 [ -d "${MUSL_DIR}" ] || mkdir -p "${MUSL_DIR}"
 tar -C "${MUSL_DIR}" -xf "/build/kernel-headers-musl.tar.zst" --transform 's|usr/lib/musl||' --wildcards 'usr/lib/musl/include/*/mman.h' 'usr/lib/musl/include/asm-generic'
 
