@@ -111,9 +111,14 @@ impl Command {
                 }, ..],
             ) = msg.entities()
             {
-                let url = &msg.text().unwrap_or_default()[offset..offset + length];
-
-                link_to_img(url).await?
+                let url: String = msg
+                    .text()
+                    .unwrap_or_default()
+                    .chars()
+                    .skip(offset)
+                    .take(length)
+                    .collect();
+                link_to_img(&url).await?
             } else {
                 None
             };
