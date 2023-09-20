@@ -5,7 +5,7 @@ export MUSL_DIR="/opt/musl"
 export LDFLAGS="-L${MUSL_DIR}/lib"
 
 CFLAGS="-I${MUSL_DIR}/include"
-if [ "$TARGET_ARCH" = "aarch64" ]; then
+if [ "$RUSTARCH" = aarch64 ]; then
   CFLAGS+=" -mno-outline-atomics"
 fi
 export CFLAGS
@@ -40,7 +40,7 @@ make -j$(nproc) install
 
 tar -C /build -xf "/build/${OPENSSL_SRC}"
 cd "/build/openssl-${OPENSSL_VERSION}"
-./Configure --prefix="${MUSL_DIR}" --openssldir=/etc/ssl --libdir=lib "linux-${TARGET_ARCH}"
+./Configure --prefix="${MUSL_DIR}" --openssldir=/etc/ssl --libdir=lib "linux-${RUSTARCH}"
 make -j$(nproc) install_dev
 
 tar -C /build -xf "/build/${VPX_SRC}"
