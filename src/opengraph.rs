@@ -1,10 +1,14 @@
+use reqwest::redirect::Policy;
 use reqwest::{Client, Response};
 use webpage::HTML;
 
 use crate::error::Error;
 
 async fn fetch(url: &str) -> Result<Response, Error> {
-    let client = Client::builder().user_agent("Twitterbot/1.0").build()?;
+    let client = Client::builder()
+        .user_agent("Twitterbot/1.0")
+        .redirect(Policy::limited(2))
+        .build()?;
 
     Ok(client.get(url).send().await?)
 }
