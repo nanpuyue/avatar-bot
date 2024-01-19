@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
-use crate::image::image_to_png;
+use crate::image::{image_to_png, tgs_to_png};
 use crate::opengraph::link_to_img;
 use crate::BOT_NAME;
 
@@ -100,6 +100,8 @@ impl Command {
 
                 if file.path.ends_with(".mp4") || file.path.ends_with(".webm") {
                     buf = video_to_png(buf)?;
+                } else if file.path.ends_with(".tgs") {
+                    buf = tgs_to_png(buf)?;
                 }
 
                 Some(buf)

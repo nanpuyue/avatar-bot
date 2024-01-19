@@ -1,9 +1,14 @@
 use std::io::Cursor;
+use std::io::Write;
 
+use flate2::write::GzDecoder;
 use image::error::ImageResult;
 use image::load_from_memory;
 use image::{DynamicImage, ImageBuffer, ImageOutputFormat, Rgba};
 use image::{GenericImage, Pixel};
+use rlottie::{Animation, Surface};
+
+use crate::error::Error;
 
 fn alpha_composit(pixel: &mut Rgba<u8>, color: [i32; 3]) {
     for i in 0..3 {
@@ -84,4 +89,23 @@ pub fn image_to_png(data: &mut Vec<u8>, background: &str, align: Option<&str>) -
     }
 
     DynamicImage::ImageRgba8(rgba).write_to(&mut Cursor::new(data), ImageOutputFormat::Png)
+}
+
+pub fn tgs_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
+    let mut json_data = Vec::new();
+    GzDecoder::new(&mut json_data).write_all(&data)?;
+    let mut animation =
+        Animation::from_data(json_data, Vec::new(), "/nonexistent").ok_or("Invalid lottie data")?;
+    let mut surface = Surface::new(animation.size());
+    animation.render(0, &mut surface);
+
+    let mut rgba = ImageBuffer::<Rgba<u8>, _>::new(surface.width() as _, surface.height() as _);
+    for (x, y) in rgba.pixels_mut().zip(surface.data()) {
+        (x[0], x[1], x[2], x[3]) = (y.r, y.g, y.b, y.a);
+    }
+
+    let mut png_data = Vec::new();
+    DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut Cursor::new(&mut png_data), ImageOutputFormat::Png)?;
+    Ok(png_data)
 }
