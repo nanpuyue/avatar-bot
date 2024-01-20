@@ -157,20 +157,12 @@ impl Command {
                 Ok(())
             }
             Command::SetAvatar(args) => {
-                let mut args = args.split(' ');
                 let mut align = None;
                 let mut color = "";
-                let next = args.next().unwrap_or_default();
-                match next {
-                    "" => {}
-                    "t" | "top" | "b" | "bottom" => align = Some(next),
-                    x => {
-                        color = x;
-                        let next = args.next().unwrap_or_default();
-                        match next {
-                            "t" | "top" | "b" | "bottom" => align = Some(next),
-                            _ => {}
-                        }
+                for x in args.split_whitespace().take(2) {
+                    match x {
+                        "t" | "top" | "b" | "bottom" => align = Some(x),
+                        _ => color = x,
                     }
                 }
 
