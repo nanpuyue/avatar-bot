@@ -1,36 +1,29 @@
 #!/bin/bash -ex
 
-if [ "$RUSTARCH" = aarch64 ]; then
-  CFLAGS+=" -mno-outline-atomics"
-fi
-export CFLAGS
-
 RLOTTIE_VERSION="d400087"
 FFMPEG_VERSION="6.1.1"
-VPX_VERSION="1.14.0"
+LIBVPX_VERSION="1.14.0"
 
 RLOTTIE_SRC="rlottie-${RLOTTIE_VERSION}.zip"
-VPX_SRC="libvpx-${VPX_VERSION}.tar.gz"
+LIBVPX_SRC="libvpx-${LIBVPX_VERSION}.tar.gz"
 FFMPEG_SRC="ffmpeg-${FFMPEG_VERSION}.tar.xz"
 
 [ -d /build ] || mkdir -p /build
 wget "https://codeload.github.com/Samsung/rlottie/zip/${RLOTTIE_VERSION}" -O "/build/${RLOTTIE_SRC}"
-wget "https://github.com/webmproject/libvpx/archive/refs/tags/v${VPX_VERSION}.tar.gz" -O "/build/${VPX_SRC}"
+wget "https://github.com/webmproject/libvpx/archive/refs/tags/v${LIBVPX_VERSION}.tar.gz" -O "/build/${LIBVPX_SRC}"
 wget "https://ffmpeg.org/releases/${FFMPEG_SRC}" -O "/build/${FFMPEG_SRC}"
 
 unzip -d /build -o "/build/${RLOTTIE_SRC}"
 cd "/build/rlottie-${RLOTTIE_VERSION}"
 sed -ri 's/(-lrlottie)/\1 -lstdc++/' rlottie.pc.in
-mkdir -p build
-cd build
+mkdir -p build && cd build
 cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/usr/local -DLIB_INSTALL_DIR="/usr/local/lib" ..
 make -j$(nproc) install
 
-tar -C /build -xf "/build/${VPX_SRC}"
-cd "/build/libvpx-${VPX_VERSION}"
+tar -C /build -xf "/build/${LIBVPX_SRC}"
+cd "/build/libvpx-${LIBVPX_VERSION}"
 ./configure --prefix=/usr/local --disable-unit-tests
-make -j$(nproc)
-make install
+make -j$(nproc) install
 
 tar -C /build -xf "/build/${FFMPEG_SRC}"
 cd "/build/ffmpeg-${FFMPEG_VERSION}"

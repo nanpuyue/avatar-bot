@@ -17,14 +17,14 @@ RUN /build.sh && rm -rf /build
 
 FROM rust-$TARGETARCH
 SHELL ["/bin/bash", "-c"]
-COPY --from=builder / /opt/musl
+COPY --from=builder / /musl
 RUN apt update &&\
  apt install -y --no-install-recommends make musl{,-dev,-tools} pkg-config libclang-dev &&\
  apt clean &&\
- rustup target add "$RUSTARCH"-unknown-linux-musl
+ rustup target add "$RUSTARCH-unknown-linux-musl"
 
 ENV CC="musl-gcc"
-ENV MUSL_DIR="/opt/musl"
+ENV MUSL_DIR="/musl"
 ENV CFLAGS="-I${MUSL_DIR}/usr/include -I${MUSL_DIR}/usr/local/include"
 ENV LDFLAGS="-L${MUSL_DIR}/lib -L${MUSL_DIR}/usr/lib -L${MUSL_DIR}/usr/local/lib"
 ENV OPENSSL_DIR="${MUSL_DIR}/usr"
