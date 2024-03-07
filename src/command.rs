@@ -101,7 +101,7 @@ impl Command {
                 if file.path.ends_with(".mp4") || file.path.ends_with(".webm") {
                     buf = video_to_png(buf)?;
                 } else if file.path.ends_with(".tgs") {
-                    buf = tgs_to_png(buf)?;
+                    buf = tgs_to_png(buf, file_id)?;
                 }
 
                 Some(buf)

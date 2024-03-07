@@ -88,11 +88,11 @@ pub fn image_to_png(data: &mut Vec<u8>, background: &str, align: Option<&str>) -
     DynamicImage::ImageRgba8(rgba).write_to(&mut Cursor::new(data), Png)
 }
 
-pub fn tgs_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
+pub fn tgs_to_png(data: Vec<u8>, cache_key: &str) -> Result<Vec<u8>, Error> {
     let mut json_data = Vec::new();
     GzDecoder::new(&mut json_data).write_all(&data)?;
     let mut animation =
-        Animation::from_data(json_data, Vec::new(), "/nonexistent").ok_or("Invalid lottie data")?;
+        Animation::from_data(json_data, cache_key, "/nonexistent").ok_or("Invalid lottie data")?;
     let mut surface = Surface::new(animation.size());
     animation.render(0, &mut surface);
 
