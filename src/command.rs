@@ -6,7 +6,7 @@ use std::{env, io};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, MessageCommon, MessageEntity, MessageEntityKind, MessageKind};
+use teloxide::types::{InputFile, MessageEntity, MessageEntityKind};
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
 
@@ -56,12 +56,7 @@ macro_rules! file_id {
 }
 
 impl Command {
-    async fn set_avatar(
-        color: &str,
-        align: Option<&str>,
-        bot: &Bot,
-        message: &Message,
-    ) -> Result<(), Error> {
+    async fn set_avatar(bot: &Bot, message: &Message, args: String) -> Result<(), Error> {
         let chat_id = message.chat.id;
 
         let last_update = LAST_UPDATE.lock().await;
@@ -77,11 +72,7 @@ impl Command {
             return Ok(());
         }
 
-        if let MessageKind::Common(MessageCommon {
-            reply_to_message: Some(msg),
-            ..
-        }) = &message.kind
-        {
+        if let Some(msg) = message.reply_to_message() {
             let file_id = msg
                 .sticker()
                 .map(|x| &x.file.id)
@@ -126,9 +117,27 @@ impl Command {
             };
 
             if let Some(mut buf) = image {
+                let mut align = None;
+                let mut dry_run = false;
+                let mut color = "";
+                for x in args.split_whitespace().take(3) {
+                    match x {
+                        "t" | "top" | "b" | "bottom" => align = Some(x),
+                        "d" | "dry" => dry_run = true,
+                        _ => color = x,
+                    }
+                }
+
                 image_to_png(&mut buf, color, align)?;
-                bot.set_chat_photo(chat_id, InputFile::memory(buf)).await?;
-                *chat_last_update = Instant::now();
+                let photo = InputFile::memory(buf);
+                if dry_run {
+                    let mut send_photo = bot.send_photo(chat_id, photo);
+                    send_photo.reply_to_message_id = Some(message.id);
+                    send_photo.await?;
+                } else {
+                    bot.set_chat_photo(chat_id, photo).await?;
+                    *chat_last_update = Instant::now();
+                }
             } else {
                 bot.send_message(chat_id, "未检测到受支持的头像").await?;
             }
@@ -156,28 +165,17 @@ impl Command {
                     .await?;
                 Ok(())
             }
-            Command::SetAvatar(args) => {
-                let mut align = None;
-                let mut color = "";
-                for x in args.split_whitespace().take(2) {
-                    match x {
-                        "t" | "top" | "b" | "bottom" => align = Some(x),
-                        _ => color = x,
+            Command::SetAvatar(args) => match Self::set_avatar(&bot, &message, args).await {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if let Some(x) = e.message() {
+                        bot.send_message(chat_id, x).await?;
+                        return Ok(());
                     }
+                    bot.send_message(chat_id, "出现了预料外的错误").await?;
+                    Err(io::Error::new(io::ErrorKind::Other, e).into())
                 }
-
-                match Self::set_avatar(color, align, &bot, &message).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        if let Some(x) = e.message() {
-                            bot.send_message(chat_id, x).await?;
-                            return Ok(());
-                        }
-                        bot.send_message(chat_id, "出现了预料外的错误").await?;
-                        Err(io::Error::new(io::ErrorKind::Other, e).into())
-                    }
-                }
-            }
+            },
         }
     }
 }
