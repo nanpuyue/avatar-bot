@@ -8,12 +8,12 @@ edition = "2021"
 
 [dependencies]
 flate2 = "1.0.28"
-image = "0.24.8"
+image = "0.24.9"
 lazy_static = "1.4.0"
 pretty_env_logger = "0.5.0"
-reqwest = "0.11.23"
+reqwest = "0.11.25"
 rlottie = "0.5.2"
 rsmpeg = "0.14.2"
 teloxide = { version = "0.12.2", features = ["macros"] }
-tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 webpage = { version = "2.0.0", default-features = false }
