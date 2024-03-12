@@ -20,6 +20,18 @@ async fn main() {
     let bot_token = env::var("BOT_TOKEN").expect("Please set the environment variable BOT_TOKEN");
     lazy_static::initialize(&LAST_UPDATE);
 
+    let channel_post = Update::filter_channel_post()
+        .filter_command::<Command>()
+        .endpoint(Command::run);
+    let message = Update::filter_message()
+        .filter_command::<Command>()
+        .endpoint(Command::run);
+    let handler = dptree::entry().branch(message).branch(channel_post);
+
     let bot = Bot::new(bot_token);
-    Command::repl(bot, Command::run).await;
+    Dispatcher::builder(bot, handler)
+        .enable_ctrlc_handler()
+        .build()
+        .dispatch()
+        .await;
 }
