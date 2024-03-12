@@ -11,8 +11,6 @@ mod ffmpeg;
 mod image;
 mod opengraph;
 
-static mut BOT_NAME: String = String::new();
-
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -23,13 +21,5 @@ async fn main() {
     lazy_static::initialize(&LAST_UPDATE);
 
     let bot = Bot::new(bot_token);
-    unsafe {
-        BOT_NAME = bot
-            .get_me()
-            .await
-            .expect("Failed to get the bot username")
-            .username()
-            .into();
-    }
-    teloxide::repl(bot, Command::run).await;
+    Command::repl(bot, Command::run).await;
 }
