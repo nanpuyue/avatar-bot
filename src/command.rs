@@ -19,8 +19,8 @@ const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: u32 = 10 * 1024 * 1024;
 
 lazy_static! {
-    pub static ref LAST_UPDATE: Mutex<HashMap<i64, Mutex<Instant>>> = {
-        let mut last_update = <HashMap<i64, Mutex<Instant>>>::new();
+    pub static ref LAST_UPDATE: HashMap<ChatId, Mutex<Instant>> = {
+        let mut last_update = HashMap::new();
         let last = Instant::now() - MIN_INTERVAL;
 
         for i in env::var("CHAT_LIST")
@@ -28,12 +28,12 @@ lazy_static! {
             .split(',')
         {
             last_update.insert(
-                i64::from_str(i).expect("Parsing CHAT_LIST failed"),
+                ChatId(i64::from_str(i).expect("Parsing CHAT_LIST failed")),
                 Mutex::new(last),
             );
         }
 
-        Mutex::new(last_update)
+        last_update
     };
 }
 
@@ -58,8 +58,7 @@ impl Command {
     async fn set_avatar(bot: &Bot, message: &Message, args: String) -> Result<(), Error> {
         let chat_id = message.chat.id;
 
-        let last_update = LAST_UPDATE.lock().await;
-        let mut chat_last_update = if let Some(x) = last_update.get(&chat_id.0) {
+        let mut chat_last_update = if let Some(x) = LAST_UPDATE.get(&chat_id) {
             x.lock().await
         } else {
             bot.send_message(chat_id, format!("尚未向本群组 ({}) 提供服务", chat_id))
