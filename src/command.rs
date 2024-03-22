@@ -6,7 +6,7 @@ use std::{env, io};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, MessageEntity, MessageEntityKind};
+use teloxide::types::{InputFile, MessageEntity, MessageEntityKind, StickerFormat::*};
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
 
@@ -87,19 +87,12 @@ impl Command {
                 let mut buf = Vec::new();
                 let file = bot.get_file(file_id).await?;
 
-                let mut file_ext = String::new();
-                if file_type == "sticker" {
-                    if let Some((_, x)) = file.path.rsplit_once('.') {
-                        file_ext = x.to_ascii_lowercase()
-                    }
-                }
-
                 let tgs_to_png;
                 let mut download = true;
                 let mut file_to_png: Option<&(dyn Fn(_) -> _ + Sync)> = None;
-                match (file_type, file_ext.as_str()) {
-                    ("sticker", "webp") | ("photo", _) => {}
-                    ("sticker", "tgs") => {
+                match (file_type, message.sticker().map(|x| &x.format)) {
+                    ("sticker", Some(Raster)) | ("photo", _) => {}
+                    ("sticker", Some(Animated)) => {
                         tgs_to_png = |x| crate::image::tgs_to_png(x, file_id);
                         file_to_png.replace(&tgs_to_png);
                     }
