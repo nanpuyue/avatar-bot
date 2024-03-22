@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
-use crate::image::{image_to_png, tgs_to_png};
+use crate::image::image_to_png;
 use crate::opengraph::link_to_img;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
@@ -50,7 +50,7 @@ macro_rules! file_id {
     ($msg:expr, $func:ident) => {
         $msg.$func()
             .filter(|&x| x.thumb.is_some() && x.file.size <= MAX_FILESIZE)
-            .map(|x| &x.file.id)
+            .map(|x| (&x.file.id, stringify!($func)))
     };
 }
 
@@ -70,39 +70,64 @@ impl Command {
             return Ok(());
         }
 
-        if let Some(msg) = message.reply_to_message() {
-            let file_id = msg
-                .sticker()
-                .map(|x| &x.file.id)
-                .or_else(|| {
-                    msg.photo()
-                        .and_then(|x| x.iter().max_by_key(|&x| x.file.size).map(|x| &x.file.id))
+        if let Some(message) = message.reply_to_message() {
+            let file_id = message
+                .photo()
+                .and_then(|x| {
+                    x.iter()
+                        .max_by_key(|&x| x.file.size)
+                        .map(|x| (&x.file.id, "photo"))
                 })
-                .or_else(|| file_id!(msg, document))
-                .or_else(|| file_id!(msg, animation))
-                .or_else(|| file_id!(msg, video));
+                .or_else(|| file_id!(message, sticker))
+                .or_else(|| file_id!(message, document))
+                .or_else(|| file_id!(message, animation))
+                .or_else(|| file_id!(message, video));
 
-            let image = if let Some(file_id) = file_id {
+            let image = if let Some((file_id, file_type)) = file_id {
                 let mut buf = Vec::new();
                 let file = bot.get_file(file_id).await?;
-                bot.download_file(&file.path, &mut buf).await?;
+                let file_ext = file
+                    .path
+                    .rsplit_once('.')
+                    .map(|(_, x)| x.to_ascii_lowercase())
+                    .unwrap_or_default();
 
-                if file.path.ends_with(".mp4") || file.path.ends_with(".webm") {
-                    buf = video_to_png(buf)?;
-                } else if file.path.ends_with(".tgs") {
-                    buf = tgs_to_png(buf, file_id)?;
+                let tgs_to_png;
+                let mut download = true;
+                let mut file_to_png: Option<&(dyn Fn(_) -> _ + Sync)> = None;
+                match (file_type, file_ext.as_str()) {
+                    ("photo", _)
+                    | ("sticker", "webp")
+                    | ("document", "webp" | "jpg" | "jpeg" | "png") => {}
+                    ("sticker", "tgs") => {
+                        tgs_to_png = |x| crate::image::tgs_to_png(x, file_id);
+                        file_to_png.replace(&tgs_to_png);
+                    }
+                    ("sticker" | "video" | "animation", _)
+                    | ("document", "mp4" | "webm" | "gif") => {
+                        file_to_png.replace(&video_to_png);
+                    }
+                    _ => download = false,
+                };
+
+                if download {
+                    bot.download_file(&file.path, &mut buf).await?;
+                    if let Some(file_to_png) = file_to_png {
+                        buf = file_to_png(buf)?;
+                    }
+                    Some(buf)
+                } else {
+                    None
                 }
-
-                Some(buf)
             } else if let Some(
                 &[MessageEntity {
                     kind: MessageEntityKind::Url,
                     offset,
                     length,
                 }, ..],
-            ) = msg.entities()
+            ) = message.entities()
             {
-                let url: String = msg
+                let url: String = message
                     .text()
                     .unwrap_or_default()
                     .chars()
