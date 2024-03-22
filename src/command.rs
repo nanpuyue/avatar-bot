@@ -86,28 +86,36 @@ impl Command {
             let image = if let Some((file_id, file_type)) = file_id {
                 let mut buf = Vec::new();
                 let file = bot.get_file(file_id).await?;
-                let file_ext = file
-                    .path
-                    .rsplit_once('.')
-                    .map(|(_, x)| x.to_ascii_lowercase())
-                    .unwrap_or_default();
+
+                let mut file_ext = String::new();
+                if file_type == "sticker" {
+                    if let Some((_, x)) = file.path.rsplit_once('.') {
+                        file_ext = x.to_ascii_lowercase()
+                    }
+                }
 
                 let tgs_to_png;
                 let mut download = true;
                 let mut file_to_png: Option<&(dyn Fn(_) -> _ + Sync)> = None;
                 match (file_type, file_ext.as_str()) {
-                    ("photo", _)
-                    | ("sticker", "webp")
-                    | ("document", "webp" | "jpg" | "jpeg" | "png") => {}
+                    ("sticker", "webp") | ("photo", _) => {}
                     ("sticker", "tgs") => {
                         tgs_to_png = |x| crate::image::tgs_to_png(x, file_id);
                         file_to_png.replace(&tgs_to_png);
                     }
-                    ("sticker" | "video" | "animation", _)
-                    | ("document", "mp4" | "webm" | "gif") => {
+                    ("sticker" | "video" | "animation", _) => {
                         file_to_png.replace(&video_to_png);
                     }
-                    _ => download = false,
+                    _ => {
+                        let mime = message.document().and_then(|x| x.mime_type.as_ref());
+                        match mime.map(|x| x.type_().as_str()) {
+                            Some("image") => {}
+                            Some("video") => {
+                                file_to_png.replace(&video_to_png);
+                            }
+                            _ => download = false,
+                        }
+                    }
                 };
 
                 if download {
