@@ -6,7 +6,7 @@ use std::{env, io};
 use lazy_static::lazy_static;
 use teloxide::net::Download;
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, MessageEntity, MessageEntityKind, StickerFormat::*};
+use teloxide::types::{InputFile, MessageEntityKind, StickerFormat::*};
 use teloxide::utils::command::BotCommands;
 use tokio::sync::Mutex;
 
@@ -120,22 +120,20 @@ impl Command {
                 } else {
                     None
                 }
-            } else if let Some(
-                &[MessageEntity {
-                    kind: MessageEntityKind::Url,
-                    offset,
-                    length,
-                }, ..],
-            ) = message.entities()
-            {
-                let url: String = message
-                    .text()
-                    .unwrap_or_default()
-                    .chars()
-                    .skip(offset)
-                    .take(length)
-                    .collect();
-                link_to_img(&url).await?
+            } else if let Some(entities) = message.entities() {
+                let mut buf = None;
+                for e in entities {
+                    if e.kind == MessageEntityKind::Url {
+                        if let Some(url) = message
+                            .text()
+                            .map(|x| x.chars().skip(e.offset).take(e.length).collect::<String>())
+                        {
+                            buf = link_to_img(&url).await?;
+                        }
+                        break;
+                    }
+                }
+                buf
             } else {
                 None
             };
