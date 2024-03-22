@@ -84,9 +84,6 @@ impl Command {
                 .or_else(|| file_id!(message, video));
 
             let image = if let Some((file_id, file_type)) = file_id {
-                let mut buf = Vec::new();
-                let file = bot.get_file(file_id).await?;
-
                 let tgs_to_png;
                 let mut download = true;
                 let mut file_to_png: Option<&(dyn Fn(_) -> _ + Sync)> = None;
@@ -112,6 +109,8 @@ impl Command {
                 };
 
                 if download {
+                    let mut buf = Vec::new();
+                    let file = bot.get_file(file_id).await?;
                     bot.download_file(&file.path, &mut buf).await?;
                     if let Some(file_to_png) = file_to_png {
                         buf = file_to_png(buf)?;
