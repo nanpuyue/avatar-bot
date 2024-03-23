@@ -140,16 +140,22 @@ impl Command {
             if let Some(mut buf) = image {
                 let mut align = None;
                 let mut dry_run = false;
+                let mut show_detect = false;
                 let mut color = "";
                 for x in args.split_whitespace().take(3) {
                     match x {
-                        "t" | "top" | "b" | "bottom" => align = Some(x),
+                        "t" | "top" | "b" | "bottom" | "c" | "center" => align = Some(x),
                         "d" | "dry" => dry_run = true,
+                        "s" | "show" => {
+                            align = None;
+                            dry_run = true;
+                            show_detect = true;
+                        }
                         _ => color = x,
                     }
                 }
 
-                image_to_png(&mut buf, color, align)?;
+                image_to_png(&mut buf, color, align, show_detect)?;
                 let photo = InputFile::memory(buf);
                 if dry_run {
                     let mut send_photo = bot.send_photo(chat_id, photo);

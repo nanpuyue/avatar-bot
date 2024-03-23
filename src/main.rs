@@ -9,6 +9,7 @@ mod command;
 mod error;
 mod ffmpeg;
 mod image;
+mod opencv;
 mod opengraph;
 
 #[tokio::main]
