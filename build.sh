@@ -1,26 +1,19 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 
-if [ "$1" = x86_64 ] || [ "$1" = aarch64 ]; then
-    RUSTARCH="$1"
+if [ "$1" = amd64 -o "$1" = arm64 ]; then
+    PLATFORM="linux/$1"
+    echo "build for $PLATFORM platform ..."
 else
-    RUSTARCH="$(uname -m)"
-    [ "$RUSTARCH" = arm64 ] && RUSTARCH=aarch64
-fi
-
-if [ "$RUSTARCH" = x86_64 ];then
-    PLATFORM=linux/amd64
-elif [ "$RUSTARCH" = aarch64 ]; then
-    PLATFORM=linux/arm64
-else
-    echo "Unsupported platform!"
-    exit 1
+    echo "build for docker host platform ..."
 fi
 
 [ -d "$CARGO_HOME" ] || CARGO_HOME="$HOME/.cargo"
 WORKDIR="/build/avatar-bot"
 REGISTRY="/usr/local/cargo/registry"
 
-docker run --platform="$PLATFORM" -it --rm -v "$CARGO_HOME/registry":"$REGISTRY"\
+docker run ${PLATFORM+--platform=$PLATFORM }-it --rm\
+ -v "$CARGO_HOME/registry":"$REGISTRY"\
  -v "$PWD":"$WORKDIR" --workdir "$WORKDIR"\
+ -e RUSTFLAGS="-C opt-level=s -C link-arg=-s"\
  ghcr.io/nanpuyue/avatar-bot-builder:latest\
- cargo build --release --target "$RUSTARCH-unknown-linux-musl"
+ sh -c 'cargo build --release --target "$(rustc -Vv|grep host:|cut -b7-)"'

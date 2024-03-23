@@ -1,21 +1,20 @@
 # syntax=docker/dockerfile:1.4
 
-FROM alpine AS alpine-amd64
-ARG RUSTARCH=x86_64
-
-FROM rust:slim AS rust-amd64
-ARG RUSTARCH=x86_64
-
-FROM alpine AS alpine-arm64
-ARG RUSTARCH=aarch64
-
-FROM rust:slim AS rust-arm64
-ARG RUSTARCH=aarch64
-
-FROM alpine-$TARGETARCH AS builder
-RUN apk add bash diffutils cmake gcc g++ linux-headers make openssl-dev openssl-libs-static perl pkgconfig yasm zlib-dev zlib-static
+FROM rust:alpine
+RUN apk add bash diffutils cmake clang clang-dev gcc g++ linux-headers make openssl-dev openssl-libs-static perl pkgconfig yasm zlib-dev zlib-static
 RUN <<eot
 #!/bin/bash -ex
+
+cat > /usr/local/bin/rustc_wrapper <<"EOF"
+#!/bin/sh
+RUSTC="$1"; shift
+if [ "${CARGO_CRATE_NAME#build_script_}" != "$CARGO_CRATE_NAME" ]; then
+    exec "$RUSTC" "$@" -C target-feature=-crt-static
+else
+    exec "$RUSTC" "$@"
+fi
+EOF
+chmod +x /usr/local/bin/rustc_wrapper
 
 RLOTTIE_VERSION="d400087"
 FFMPEG_VERSION="6.1.1"
@@ -64,42 +63,17 @@ cmake -DCMAKE_INSTALL_PREFIX=/usr/local\
  -DBUILD_LIST=core,imgcodecs,imgproc,objdetect\
  -DOPENCV_GENERATE_PKGCONFIG=ON ..
 make -j$(nproc) install
+cd /usr/local/lib/opencv4/3rdparty/
+for i in liblib*.a; do
+    mv -v "$i" "${i#lib}"
+done
 
 rm -rf /build
 eot
 
-FROM rust-$TARGETARCH
 SHELL ["/bin/bash", "-c"]
-COPY --from=builder / /musl
-RUN <<eot
-#!/bin/bash -ex
 
-apt update
-apt install -y --no-install-recommends make musl{,-dev,-tools} pkg-config clang libclang-dev
-
-apt clean
-rustup target add "$RUSTARCH-unknown-linux-musl"
-
-cat >/usr/bin/musl-g++ <<EOF
-#!/bin/sh
-export LD_LIBRARY_PATH=/musl/lib:/musl/usr/lib
-exec /musl/usr/bin/$RUSTARCH-alpine-linux-musl-g++ "\$@" --sysroot=/musl
-EOF
-chmod +x /usr/bin/musl-g++
-eot
-
-ENV CC="musl-gcc"
-ENV CXX="musl-g++"
-ENV MUSL_DIR="/musl"
-ENV CFLAGS="-I${MUSL_DIR}/usr/include -I${MUSL_DIR}/usr/local/include"
-ENV LDFLAGS="-L${MUSL_DIR}/lib -L${MUSL_DIR}/usr/lib -L${MUSL_DIR}/usr/local/lib"
-ENV OPENSSL_DIR="${MUSL_DIR}/usr"
 ENV OPENSSL_STATIC="1"
-ENV TARGET_PKG_CONFIG_SYSROOT_DIR="${MUSL_DIR}"
-ENV TARGET_PKG_CONFIG_PATH="${MUSL_DIR}/usr/lib/pkgconfig:${MUSL_DIR}/usr/local/lib/pkgconfig"
-ENV FFMPEG_PKG_CONFIG_PATH="${MUSL_DIR}/usr/local/lib/pkgconfig"
-ENV TARGET_PKG_CONFIG_ALLOW_CROSS="1"
-ENV RUSTFLAGS="-Copt-level=s -Clink-arg=-s"
-ENV BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/${RUSTARCH}-linux-musl ${CFLAGS}"
-ENV OPENCV_LINK_LIBS="opencv_objdetect,opencv_imgcodecs,opencv_imgproc,opencv_core,IlmImf,liblibwebp,liblibtiff,liblibjpeg-turbo,liblibpng,liblibopenjp2,tegra_hal"
-ENV OPENCV_LINK_PATHS="${MUSL_DIR}/usr/local/lib,${MUSL_DIR}/usr/local/lib/opencv4/3rdparty"
+ENV OPENCV4_STATIC="1"
+ENV FFMPEG_PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+ENV RUSTC_WRAPPER="/usr/local/bin/rustc_wrapper"
