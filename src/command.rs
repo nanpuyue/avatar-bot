@@ -56,6 +56,23 @@ macro_rules! file_id {
 
 impl Command {
     async fn set_avatar(bot: &Bot, message: &Message, args: String) -> Result<(), Error> {
+        let mut align = None;
+        let mut dry_run = false;
+        let mut show_detect = false;
+        let mut color = "0";
+        for x in args.split_whitespace().take(3) {
+            match x {
+                "t" | "top" | "b" | "bottom" | "c" | "center" => align = Some(x),
+                "d" | "dry" => dry_run = true,
+                "s" | "show" => {
+                    align = None;
+                    dry_run = true;
+                    show_detect = true;
+                }
+                _ => color = x,
+            }
+        }
+
         let chat_id = message.chat.id;
 
         let mut chat_last_update = if let Some(x) = LAST_UPDATE.get(&chat_id) {
@@ -65,7 +82,7 @@ impl Command {
                 .await?;
             return Ok(());
         };
-        if chat_last_update.elapsed() < MIN_INTERVAL {
+        if !dry_run && chat_last_update.elapsed() < MIN_INTERVAL {
             bot.send_message(chat_id, "技能冷却中").await?;
             return Ok(());
         }
@@ -138,23 +155,6 @@ impl Command {
             };
 
             if let Some(mut buf) = image {
-                let mut align = None;
-                let mut dry_run = false;
-                let mut show_detect = false;
-                let mut color = "";
-                for x in args.split_whitespace().take(3) {
-                    match x {
-                        "t" | "top" | "b" | "bottom" | "c" | "center" => align = Some(x),
-                        "d" | "dry" => dry_run = true,
-                        "s" | "show" => {
-                            align = None;
-                            dry_run = true;
-                            show_detect = true;
-                        }
-                        _ => color = x,
-                    }
-                }
-
                 image_to_png(&mut buf, color, align, show_detect)?;
                 let photo = InputFile::memory(buf);
                 if dry_run {
