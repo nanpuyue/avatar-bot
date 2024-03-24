@@ -35,8 +35,8 @@ pub fn detect_animeface(img: &[u8]) -> Result<Vec<Rect>, Error> {
         x.detect_multi_scale(
             &imdecode(&Vector::from_slice(img), IMREAD_COLOR)?,
             &mut ret,
-            1.1,
-            5,
+            1.02,
+            8,
             0,
             Size::new(64, 64),
             Size::default(),
