@@ -79,31 +79,36 @@ fn draw_thickness_rect(img: &mut RgbaImage, rect: &Rect, color: Rgba<u8>, thickn
     }
 }
 
-fn face_image(img: &mut RgbaImage, rect: Rect) -> RgbaImage {
-    assert_eq!(rect.width, rect.height);
+fn face_image_rect(img: &RgbaImage, face: &Rect) -> Rect {
+    assert_eq!(face.width, face.height);
 
-    let mut offset = rect.width / 2;
+    let mut offset = face.width / 2;
     let mut update_offset = |x: u32| {
         if x < offset {
             offset = x;
         }
     };
-    update_offset((img.width() - rect.width) / 2);
-    update_offset((img.height() - rect.height) / 2);
+    update_offset((img.width() - face.width) / 2);
+    update_offset((img.height() - face.height) / 2);
 
-    let width = rect.width + offset * 2;
-    let x = match rect.x.checked_sub(offset) {
+    let width = face.width + offset * 2;
+    let x = match face.x.checked_sub(offset) {
         None => 0,
         Some(x) if x + width > img.width() => img.width() - width,
         Some(x) => x,
     };
-    let y = match rect.y.checked_sub(offset + rect.width * 3 / 20) {
+    let y = match face.y.checked_sub(offset + face.width * 3 / 20) {
         None => 0,
         Some(y) if y + width > img.height() => img.height() - width,
         Some(y) => y,
     };
 
-    img.sub_image(x, y, width, width).to_image()
+    Rect {
+        x,
+        y,
+        width,
+        height: width,
+    }
 }
 
 pub fn image_to_png(
@@ -122,27 +127,24 @@ pub fn image_to_png(
     } else {
         let mut select = None;
         let detect = detect_animeface(data)?;
-        for i in 0..detect.len() {
+        for i in &detect {
             match select {
                 None => select = Some(i),
-                Some(x) if detect[i].width > detect[x].width => select = Some(i),
+                Some(x) if i.width > x.width => select = Some(i),
                 _ => {}
             }
         }
 
+        let select = select.map(|x| face_image_rect(&rgba, x));
         if show_detect {
-            for (i, rect) in detect.iter().enumerate() {
-                assert!(select.is_some());
-                let select = select.unwrap();
-                let color = if i == select {
-                    Rgba([0xff, 0, 0, 0xff])
-                } else {
-                    Rgba([0, 0, 0, 0xff])
-                };
-                draw_thickness_rect(&mut rgba, rect, color, rect.width / 64);
+            for i in &detect {
+                draw_thickness_rect(&mut rgba, i, Rgba([0, 0, 0, 0xff]), i.width / 64);
+            }
+            if let Some(x) = select {
+                draw_thickness_rect(&mut rgba, &x, Rgba([0xff, 0, 0, 0xff]), x.width / 128 + 1);
             }
         } else if let Some(x) = select {
-            rgba = face_image(&mut rgba, detect[x]);
+            rgba = rgba.sub_image(x.x, x.y, x.width, x.height).to_image();
         }
     }
 
