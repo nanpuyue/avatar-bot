@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::Cursor;
 use std::io::Write;
 
@@ -86,16 +87,12 @@ fn draw_thickness_rect(img: &mut RgbaImage, rect: &Rect, color: Rgba<u8>, thickn
 fn face_image_rect(img: &RgbaImage, face: &Rect) -> Rect {
     assert_eq!(face.width, face.height);
 
-    let mut offset = face.width / 2;
-    let mut update_offset = |x: u32| {
-        if x < offset {
-            offset = x;
-        }
-    };
-    update_offset((img.width() - face.width) / 2);
-    update_offset((img.height() - face.height) / 2);
+    let mut offset = face.width;
+    offset = min(offset, img.width() - face.width);
+    offset = min(offset, img.height() - face.height);
+    let width = face.width + offset;
 
-    let width = face.width + offset * 2;
+    offset /= 2;
     let x = match face.x.checked_sub(offset) {
         None => 0,
         Some(x) if x + width > img.width() => img.width() - width,
