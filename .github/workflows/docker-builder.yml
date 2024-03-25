@@ -18,7 +18,7 @@ jobs:
           - platform: linux/amd64
             label: ubuntu-latest
           - platform: linux/arm64
-            label: self-hosted
+            label: ARM64
     permissions:
       packages: write
       contents: read
