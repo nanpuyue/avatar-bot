@@ -13,9 +13,13 @@ use rlottie::{Animation, Surface};
 use crate::error::Error;
 use crate::opencv::detect_animeface;
 
-fn alpha_composit(pixel: &mut Rgba<u8>, color: [i32; 3]) {
+fn alpha_composite(pixel: &mut Rgba<u8>, color: [i32; 3]) {
     for i in 0..3 {
-        pixel[i] = (color[i] + (pixel[i] as i32 - color[i]) * pixel[3] as i32 / 255) as u8;
+        if pixel[3] == 0 {
+            pixel[i] = color[i] as _;
+        } else {
+            pixel[i] = (color[i] + (pixel[i] as i32 - color[i]) * pixel[3] as i32 / 255) as _;
+        }
     }
     pixel[3] = 255;
 }
@@ -43,7 +47,7 @@ fn trans_flag(img: &mut RgbaImage) {
             }
             let b = COLOR[color_index as usize];
             row.filter(|(_, _, x)| x[3] != 255)
-                .for_each(|(_, _, x)| alpha_composit(x, b))
+                .for_each(|(_, _, x)| alpha_composite(x, b))
         }
     });
 }
@@ -160,7 +164,7 @@ pub fn image_to_png(
 
                 rgba.pixels_mut()
                     .filter(|x| x[3] != 255)
-                    .for_each(|x| alpha_composit(x, b));
+                    .for_each(|x| alpha_composite(x, b));
             }
         }
     }
