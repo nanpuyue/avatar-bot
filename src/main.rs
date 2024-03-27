@@ -36,10 +36,7 @@ async fn main() -> Result<(), Error> {
         session: Session::load_file_or_create(&session_file)?,
         api_id,
         api_hash,
-        params: InitParams {
-            catch_up: true,
-            ..Default::default()
-        },
+        params: InitParams::default(),
     })
     .await?;
     println!("Connected!");
