@@ -59,7 +59,7 @@ impl Command {
         let mut align = None;
         let mut dry_run = false;
         let mut show_detect = false;
-        let mut color = "0";
+        let mut color = "ffffff";
         for x in args.split_whitespace().take(3) {
             match x {
                 "t" | "top" | "b" | "bottom" | "c" | "center" => align = Some(x),
