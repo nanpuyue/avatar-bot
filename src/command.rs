@@ -67,13 +67,8 @@ impl Entity for Message {
         match self.fmt_entities() {
             None => None,
             Some(x) => x.iter().find_map(|x| match x {
-                MessageEntity::BotCommand(x) => {
-                    let mut command: String = self
-                        .text()
-                        .chars()
-                        .skip(x.offset as _)
-                        .take(x.length as _)
-                        .collect();
+                MessageEntity::BotCommand(x) if x.offset == 0 => {
+                    let mut command: String = self.text().chars().take(x.length as _).collect();
                     if let Some((a, b)) = command.split_once('@') {
                         if b != username {
                             return None;
