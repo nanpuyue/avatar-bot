@@ -1,7 +1,7 @@
 [package]
 name = "avatar-bot"
 authors = ["南浦月 <nanpuyue@gmail.com>"]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,10 +12,11 @@ image = "0.25.0"
 imageproc = "0.24.0"
 lazy_static = "1.4.0"
 opencv = { version = "0.89.0", default-features = false, features = ["clang-runtime", "imgcodecs", "objdetect"] }
-pretty_env_logger = "0.5.0"
 reqwest = "0.12.1"
 rlottie = "0.5.2"
 rsmpeg = "0.14.2"
-teloxide = { version = "0.12.2", features = ["macros"] }
-tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+grammers-client = { version = "0.5.0", features = ["unstable_raw"] }
+grammers-tl-types = "0.5.1"
+grammers-session = "0.5.1"
+tokio = { version = "1.36.0", features = ["macros", "signal", "rt-multi-thread"] }
 webpage = { version = "2.0.0", default-features = false }
