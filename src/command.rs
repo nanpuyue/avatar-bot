@@ -41,7 +41,7 @@ lazy_static! {
 
 trait Entity {
     fn url(&self) -> Option<String>;
-    fn bot_command(&self, username: &str) -> Option<(&str, &str)>;
+    fn bot_command(&self, username: &str) -> Option<(String, String)>;
 }
 
 impl Entity for Message {
@@ -63,20 +63,25 @@ impl Entity for Message {
         }
     }
 
-    fn bot_command(&self, username: &str) -> Option<(&str, &str)> {
+    fn bot_command(&self, username: &str) -> Option<(String, String)> {
         match self.fmt_entities() {
             None => None,
             Some(x) => x.iter().find_map(|x| match x {
                 MessageEntity::BotCommand(x) => {
-                    let mut command = &self.text()[x.offset as usize..x.length as usize];
+                    let mut command: String = self
+                        .text()
+                        .chars()
+                        .skip(x.offset as _)
+                        .take(x.length as _)
+                        .collect();
                     if let Some((a, b)) = command.split_once('@') {
                         if b != username {
                             return None;
                         }
-                        command = a
+                        command = a.into()
                     }
-                    let args = self.text()[x.length as usize..].trim();
-                    Some((command, args))
+                    let args: String = self.text().chars().skip(x.length as _).collect();
+                    Some((command, args.trim().into()))
                 }
                 _ => None,
             }),
@@ -327,10 +332,10 @@ pub async fn handle_update(mut client: Client, update: Update) -> Result<(), Err
     match update {
         Update::NewMessage(message) if !message.outgoing() => {
             if let Some((command, args)) = message.bot_command(username) {
-                return match command {
+                return match command.as_str() {
                     "/help" => client.help(&message).await,
                     "/set_avatar" => {
-                        let opt = Opt::new(args);
+                        let opt = Opt::new(&args);
                         match client.set_avatar(&message, opt).await {
                             Err(e) => match e.message() {
                                 Some(x) => {
