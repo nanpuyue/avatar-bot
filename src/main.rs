@@ -5,7 +5,6 @@ use grammers_client::{Client, Config, InitParams};
 use grammers_session::Session;
 use tokio::select;
 use tokio::signal::ctrl_c;
-use tokio::task;
 
 use crate::command::{handle_update, LAST_UPDATE};
 use crate::error::Error;
@@ -61,13 +60,7 @@ async fn main() -> Result<(), Error> {
             None => break,
         };
 
-        let client = client.clone();
-        task::spawn(async move {
-            match handle_update(client, update).await {
-                Ok(_) => {}
-                Err(e) => eprintln!("Failed to handle update: {}", e),
-            }
-        });
+        handle_update(&client, update);
     }
 
     println!("Saving session file and exiting...");

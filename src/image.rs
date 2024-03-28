@@ -11,6 +11,9 @@ use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect;
 use rlottie::{Animation, Surface};
 
+use crate::command::Align;
+use crate::command::Color;
+use crate::command::Opt;
 use crate::error::Error;
 use crate::opencv::detect_animeface;
 
@@ -53,7 +56,7 @@ fn trans_flag(img: &mut RgbaImage) {
     });
 }
 
-fn square_image(img: &mut RgbaImage, align: &str) -> Option<RgbaImage> {
+fn square_image(img: &mut RgbaImage, align: &Align) -> Option<RgbaImage> {
     let height = img.height();
     let width = img.width();
     if width >= height {
@@ -61,13 +64,12 @@ fn square_image(img: &mut RgbaImage, align: &str) -> Option<RgbaImage> {
     }
 
     let subimage = match align {
-        "t" | "top" => img.sub_image(0, 0, width, width),
-        "b" | "bottom" => img.sub_image(0, height - width, width, width),
-        "c" | "center" => {
+        Align::Top => img.sub_image(0, 0, width, width),
+        Align::Bottom => img.sub_image(0, height - width, width, width),
+        Align::Center => {
             let y = (height - width) / 2;
             img.sub_image(0, y, width, width)
         }
-        _ => return None,
     };
 
     Some(subimage.to_image())
@@ -112,16 +114,11 @@ fn face_image_rect(img: &RgbaImage, face: &Rect) -> Rect {
     }
 }
 
-pub fn image_to_png(
-    data: &mut Vec<u8>,
-    background: &str,
-    align: Option<&str>,
-    show_detect: bool,
-) -> Result<(), Error> {
+pub fn image_to_png(data: &mut Vec<u8>, opt: &Opt) -> Result<(), Error> {
     let image = load_from_memory(data)?;
 
     let mut rgba = image.into_rgba8();
-    if let Some(align) = align {
+    if let Some(align) = &opt.align {
         if let Some(x) = square_image(&mut rgba, align) {
             rgba = x;
         }
@@ -137,7 +134,7 @@ pub fn image_to_png(
         }
 
         let select = select.map(|x| face_image_rect(&rgba, x));
-        if show_detect {
+        if opt.show_detect {
             for i in &detect {
                 draw_thickness_rect(&mut rgba, i, Rgba([0, 0, 0, 0xff]), i.width / 64);
             }
@@ -149,16 +146,10 @@ pub fn image_to_png(
         }
     }
 
-    if !show_detect {
-        match background {
-            "tr" | "trans" => trans_flag(&mut rgba),
-            _ => {
-                let [_, b @ ..] =
-                    u32::from_str_radix(background.trim().trim_start_matches('#'), 16)
-                        .unwrap_or(0xffffff)
-                        .to_be_bytes()
-                        .map(|x| x as _);
-
+    if !opt.show_detect {
+        match opt.color {
+            Color::Trans => trans_flag(&mut rgba),
+            Color::Rgb(b) => {
                 rgba.pixels_mut()
                     .filter(|x| x[3] != 255)
                     .for_each(|x| alpha_composite(x, b));

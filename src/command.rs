@@ -13,6 +13,7 @@ use grammers_tl_types::functions::channels::EditPhoto;
 use grammers_tl_types::types::{InputChatUploadedPhoto, MessageEntityCode};
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
+use tokio::task::spawn;
 
 use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
@@ -39,9 +40,69 @@ lazy_static! {
     };
 }
 
+pub enum Color {
+    Rgb([i32; 3]),
+    Trans,
+}
+
+pub enum Align {
+    Top,
+    Bottom,
+    Center,
+}
+
+pub struct Opt {
+    pub color: Color,
+    pub align: Option<Align>,
+    pub dry_run: bool,
+    pub show_detect: bool,
+}
+
+enum Command {
+    Help,
+    SetAvatar(Opt),
+}
+
+impl From<&str> for Opt {
+    fn from(args: &str) -> Self {
+        let mut color = Color::Rgb([0xff, 0xff, 0xff]);
+        let mut align = None;
+        let mut dry_run = false;
+        let mut show_detect = false;
+        for x in args.split_whitespace().take(3) {
+            match x {
+                "t" | "top" => align = Some(Align::Top),
+                "b" | "bottom" => align = Some(Align::Bottom),
+                "c" | "center" => align = Some(Align::Center),
+                "d" | "dry" => dry_run = true,
+                "s" | "show" => {
+                    align = None;
+                    dry_run = true;
+                    show_detect = true;
+                }
+                "tr" | "trans" => color = Color::Trans,
+                x => {
+                    let [_, rgb @ ..] = u32::from_str_radix(x.trim().trim_start_matches('#'), 16)
+                        .unwrap_or(0xffffff)
+                        .to_be_bytes()
+                        .map(|x| x as _);
+                    color = Color::Rgb(rgb)
+                }
+            }
+        }
+
+        Self {
+            color,
+            align,
+            dry_run,
+            show_detect,
+        }
+    }
+}
+
 trait Entity {
     fn url(&self) -> Option<String>;
-    fn bot_command(&self, username: &str) -> Option<(String, String)>;
+    fn bot_command(&self, username: &str) -> Option<Command>;
 }
 
 impl Entity for Message {
@@ -63,7 +124,7 @@ impl Entity for Message {
         }
     }
 
-    fn bot_command(&self, username: &str) -> Option<(String, String)> {
+    fn bot_command(&self, username: &str) -> Option<Command> {
         match self.fmt_entities() {
             None => None,
             Some(x) => x.iter().find_map(|x| match x {
@@ -76,7 +137,15 @@ impl Entity for Message {
                         command = a.into()
                     }
                     let args: String = self.text().chars().skip(x.length as _).collect();
-                    Some((command, args.trim().into()))
+
+                    match command.as_str() {
+                        "/help" => Some(Command::Help),
+                        "/set_avatar" => {
+                            let opt = args.trim().into();
+                            Some(Command::SetAvatar(opt))
+                        }
+                        _ => None,
+                    }
                 }
                 _ => None,
             }),
@@ -84,44 +153,9 @@ impl Entity for Message {
     }
 }
 
-struct Opt<'a> {
-    color: &'a str,
-    align: Option<&'a str>,
-    dry_run: bool,
-    show_detect: bool,
-}
-
-impl<'a> Opt<'a> {
-    fn new(args: &'a str) -> Self {
-        let mut color = "ffffff";
-        let mut align = None;
-        let mut dry_run = false;
-        let mut show_detect = false;
-        for x in args.split_whitespace().take(3) {
-            match x {
-                "t" | "top" | "b" | "bottom" | "c" | "center" => align = Some(x),
-                "d" | "dry" => dry_run = true,
-                "s" | "show" => {
-                    align = None;
-                    dry_run = true;
-                    show_detect = true;
-                }
-                _ => color = x,
-            }
-        }
-
-        Self {
-            color,
-            align,
-            dry_run,
-            show_detect,
-        }
-    }
-}
-
 trait RunCommand {
     async fn help(&mut self, message: &Message) -> Result<(), Error>;
-    async fn set_avatar(&mut self, message: &Message, opt: Opt) -> Result<(), Error>;
+    async fn set_avatar(&mut self, message: &Message, opt: &Opt) -> Result<(), Error>;
     async fn upload_file(&mut self, file: Vec<u8>, name: &str) -> Result<Uploaded, Error>;
     async fn edit_photo<C: Into<PackedChat>>(
         &mut self,
@@ -209,7 +243,7 @@ impl RunCommand for Client {
         Ok(uploaded)
     }
 
-    async fn set_avatar(&mut self, message: &Message, opt: Opt<'_>) -> Result<(), Error> {
+    async fn set_avatar(&mut self, message: &Message, opt: &Opt) -> Result<(), Error> {
         let chat = &message.chat();
         let chat_id = chat.id();
 
@@ -292,7 +326,7 @@ impl RunCommand for Client {
                 let file_name = if is_video {
                     "file.mp4"
                 } else {
-                    image_to_png(&mut buf, opt.color, opt.align, opt.show_detect)?;
+                    image_to_png(&mut buf, opt)?;
                     "file.png"
                 };
                 let uploaded = self.upload_file(buf, file_name).await?;
@@ -322,34 +356,33 @@ impl RunCommand for Client {
     }
 }
 
-pub async fn handle_update(mut client: Client, update: Update) -> Result<(), Error> {
+pub fn handle_update(client: &Client, update: Update) {
     let username = USERNAME.get().unwrap();
     match update {
         Update::NewMessage(message) if !message.outgoing() => {
-            if let Some((command, args)) = message.bot_command(username) {
-                return match command.as_str() {
-                    "/help" => client.help(&message).await,
-                    "/set_avatar" => {
-                        let opt = Opt::new(&args);
-                        match client.set_avatar(&message, opt).await {
-                            Err(e) => match e.message() {
-                                Some(x) => {
-                                    let _ = client
-                                        .send_message(&message.chat(), InputMessage::text(x))
-                                        .await?;
-                                    Ok(())
+            if let Some(command) = message.bot_command(username) {
+                let mut bot = client.clone();
+                spawn(async move {
+                    let ret = match command {
+                        Command::Help => bot.help(&message).await,
+                        Command::SetAvatar(opt) => bot.set_avatar(&message, &opt).await,
+                    };
+                    if let Err(e) = ret {
+                        match e.message() {
+                            Some(x) => {
+                                let error_message = InputMessage::text(x);
+                                if let Err(e) =
+                                    bot.send_message(&message.chat(), error_message).await
+                                {
+                                    println!("Failed to send error message \"{x}\": {e}");
                                 }
-                                None => Err(e),
-                            },
-                            x => x,
-                        }
-                    }
-                    _ => Ok(()),
-                };
+                            }
+                            None => println!("Failed to handle update: {e}"),
+                        };
+                    };
+                });
             }
         }
         _ => {}
     }
-
-    Ok(())
 }
