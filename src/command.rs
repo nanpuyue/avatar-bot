@@ -64,12 +64,12 @@ enum Command {
 }
 
 impl From<&str> for Opt {
-    fn from(args: &str) -> Self {
+    fn from(opt: &str) -> Self {
         let mut color = Color::Rgb([0xff, 0xff, 0xff]);
         let mut align = None;
         let mut dry_run = false;
         let mut show_detect = false;
-        for x in args.split_whitespace().take(3) {
+        for x in opt.split_whitespace().take(3) {
             match x {
                 "t" | "top" => align = Some(Align::Top),
                 "b" | "bottom" => align = Some(Align::Bottom),
@@ -101,22 +101,39 @@ impl From<&str> for Opt {
 }
 
 trait Entity {
-    fn url(&self) -> Option<String>;
+    fn entity(&self, offset: i32, length: i32) -> &str;
+    fn url(&self) -> Option<&str>;
     fn bot_command(&self, username: &str) -> Option<Command>;
 }
 
 impl Entity for Message {
-    fn url(&self) -> Option<String> {
+    fn entity(&self, offset: i32, length: i32) -> &str {
+        let text = self.text();
+        let start = match offset {
+            0 => 0,
+            _ => text
+                .chars()
+                .take(offset as _)
+                .fold(0, |acc, x| acc + x.len_utf8()),
+        };
+        let end = match length {
+            -1 => text.len(),
+            _ => text
+                .chars()
+                .skip(offset as _)
+                .take(length as _)
+                .fold(start, |acc, x| acc + x.len_utf8()),
+        };
+
+        &text[start..end]
+    }
+
+    fn url(&self) -> Option<&str> {
         match self.fmt_entities() {
             None => None,
             Some(x) => x.iter().find_map(|x| match x {
                 MessageEntity::Url(x) => {
-                    let url = self
-                        .text()
-                        .chars()
-                        .skip(x.offset as _)
-                        .take(x.length as _)
-                        .collect::<String>();
+                    let url = self.entity(x.offset, x.length);
                     Some(url)
                 }
                 _ => None,
@@ -129,19 +146,18 @@ impl Entity for Message {
             None => None,
             Some(x) => x.iter().find_map(|x| match x {
                 MessageEntity::BotCommand(x) if x.offset == 0 => {
-                    let mut command: String = self.text().chars().take(x.length as _).collect();
+                    let mut command = self.entity(x.offset, x.length);
                     if let Some((a, b)) = command.split_once('@') {
                         if b != username {
                             return None;
                         }
-                        command = a.into()
+                        command = a
                     }
-                    let args: String = self.text().chars().skip(x.length as _).collect();
-
-                    match command.as_str() {
+                    let opt = self.entity(x.offset + x.length, -1);
+                    match command {
                         "/help" => Some(Command::Help),
                         "/set_avatar" => {
-                            let opt = args.trim().into();
+                            let opt = opt.trim().into();
                             Some(Command::SetAvatar(opt))
                         }
                         _ => None,
@@ -314,7 +330,7 @@ impl RunCommand for Client {
                     }
                     Some(buf)
                 } else if let Some(x) = message.url() {
-                    link_to_img(&x).await?
+                    link_to_img(x).await?
                 } else {
                     None
                 }
