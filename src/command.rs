@@ -19,6 +19,7 @@ use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::{image_to_png, tgs_to_png};
 use crate::opengraph::link_to_img;
+use crate::video::tgs_to_mp4;
 use crate::USERNAME;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
@@ -308,6 +309,10 @@ impl RunCommand for Client {
                     Media::Sticker(x) => {
                         download = x.document.size() <= MAX_FILESIZE as _;
                         mime = x.document.mime_type();
+                        if let Some((width, height)) = x.document.resolution() {
+                            is_video = width == height
+                                && mime.filter(|&x| x == "application/x-tgsticker").is_some()
+                        }
                         sticker_id = x.document.id();
                     }
                     _ => {}
@@ -325,7 +330,11 @@ impl RunCommand for Client {
                         if x.starts_with("video/") && !is_video {
                             buf = video_to_png(buf)?;
                         } else if x == "application/x-tgsticker" {
-                            buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
+                            if is_video {
+                                buf = tgs_to_mp4(buf, &format!("{sticker_id}"))?;
+                            } else {
+                                buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
+                            }
                         }
                     }
                     Some(buf)

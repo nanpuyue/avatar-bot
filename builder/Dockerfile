@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.4
 
 FROM rust:alpine
-RUN apk add bash diffutils cmake clang clang-dev gcc g++ linux-headers make openssl-dev openssl-libs-static perl pkgconfig yasm zlib-dev zlib-static
+RUN apk add bash diffutils cmake clang clang-dev gcc g++ linux-headers make openssl-dev openssl-libs-static perl pkgconfig x264-dev yasm zlib-dev zlib-static
 RUN <<eot
 #!/bin/bash -ex
 
@@ -47,7 +47,7 @@ make -j$(nproc) install
 tar -C /build -xf "/build/${FFMPEG_SRC}"
 cd "/build/ffmpeg-${FFMPEG_VERSION}"
 ./configure --prefix=/usr/local --enable-gpl --enable-nonfree --enable-zlib\
- --enable-libvpx --disable-programs
+ --enable-libvpx --enable-libx264
 make -j$(nproc) install
 
 tar -C /build -xf "/build/${OPENCV_SRC}"

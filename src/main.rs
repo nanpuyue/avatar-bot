@@ -15,6 +15,7 @@ mod ffmpeg;
 mod image;
 mod opencv;
 mod opengraph;
+mod video;
 
 pub static USERNAME: OnceLock<String> = OnceLock::new();
 
