@@ -19,7 +19,7 @@ use crate::error::{Error, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::{image_to_png, tgs_to_png};
 use crate::opengraph::link_to_img;
-use crate::video::tgs_to_mp4;
+use crate::video::{tgs_to_mp4, video_to_mp4};
 use crate::USERNAME;
 
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
@@ -287,7 +287,7 @@ impl RunCommand for Client {
                 .swap_remove(0)
                 .ok_or("Failed to get reply")?;
 
-            let mut is_video = false;
+            let mut is_square = false;
             let image = if let Some(media) = message.media() {
                 let mut download = false;
                 let mut mime = None;
@@ -302,16 +302,14 @@ impl RunCommand for Client {
                         download = x.size() <= MAX_FILESIZE as _;
                         mime = x.mime_type();
                         if let Some((width, height)) = x.resolution() {
-                            is_video = width == height
-                                && mime.filter(|&x| x.starts_with("video/mp4")).is_some()
+                            is_square = width == height;
                         }
                     }
                     Media::Sticker(x) => {
                         download = x.document.size() <= MAX_FILESIZE as _;
                         mime = x.document.mime_type();
                         if let Some((width, height)) = x.document.resolution() {
-                            is_video = width == height
-                                && mime.filter(|&x| x == "application/x-tgsticker").is_some()
+                            is_square = width == height;
                         }
                         sticker_id = x.document.id();
                     }
@@ -327,10 +325,16 @@ impl RunCommand for Client {
                     }
 
                     if let Some(x) = mime {
-                        if x.starts_with("video/") && !is_video {
-                            buf = video_to_png(buf)?;
+                        if x.starts_with("video/") {
+                            if is_square {
+                                if !x.starts_with("video/mp4") {
+                                    buf = video_to_mp4(buf)?;
+                                }
+                            } else {
+                                buf = video_to_png(buf)?;
+                            }
                         } else if x == "application/x-tgsticker" {
-                            if is_video {
+                            if is_square {
                                 buf = tgs_to_mp4(buf, &format!("{sticker_id}"))?;
                             } else {
                                 buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
@@ -348,7 +352,7 @@ impl RunCommand for Client {
             };
 
             if let Some(mut buf) = image {
-                let file_name = if is_video {
+                let file_name = if is_square {
                     "file.mp4"
                 } else {
                     image_to_png(&mut buf, opt)?;
@@ -357,14 +361,14 @@ impl RunCommand for Client {
                 let uploaded = self.upload_file(buf, file_name).await?;
                 if opt.dry_run {
                     let mut input_message = InputMessage::text("").reply_to(Some(message.id()));
-                    if is_video {
+                    if is_square {
                         input_message = input_message.document(uploaded).mime_type("video/mp4");
                     } else {
                         input_message = input_message.photo(uploaded);
                     }
                     self.send_message(chat, input_message).await?;
                 } else {
-                    self.edit_photo(chat, uploaded, is_video).await?;
+                    self.edit_photo(chat, uploaded, is_square).await?;
                     *chat_last_update = Instant::now();
                 }
             } else {
