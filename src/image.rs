@@ -17,7 +17,7 @@ use crate::command::Opt;
 use crate::error::Error;
 use crate::opencv::detect_animeface;
 
-fn alpha_composite(pixel: &mut Rgba<u8>, color: [i32; 3]) {
+pub fn alpha_composite(pixel: &mut [u8; 4], color: [i32; 3]) {
     for i in 0..3 {
         if pixel[3] == 0 {
             pixel[i] = color[i] as _;
@@ -51,7 +51,7 @@ fn trans_flag(img: &mut RgbaImage) {
             }
             let b = COLOR[color_index as usize];
             row.filter(|(_, _, x)| x[3] != 255)
-                .for_each(|(_, _, x)| alpha_composite(x, b))
+                .for_each(|(_, _, Rgba(x))| alpha_composite(x, b))
         }
     });
 }
@@ -152,7 +152,7 @@ pub fn image_to_png(data: &mut Vec<u8>, opt: &Opt) -> Result<(), Error> {
             Color::Rgb(b) => {
                 rgba.pixels_mut()
                     .filter(|x| x[3] != 255)
-                    .for_each(|x| alpha_composite(x, b));
+                    .for_each(|Rgba(x)| alpha_composite(x, b));
             }
         }
     }

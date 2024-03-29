@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::slice;
 use std::sync::atomic::Ordering::Relaxed;
 use std::{
     ffi::{CStr, CString},
@@ -21,6 +22,7 @@ use rsmpeg::{
 };
 
 use crate::error::Error;
+use crate::image::alpha_composite;
 
 struct SurfaceIter {
     surface: Surface,
@@ -85,7 +87,16 @@ impl FrameDataIter for SurfaceIter {
                 self.width,
                 self.height,
             )?;
+
+            let ptr = self.frame_buffer.data_mut()[0] as *mut [u8; 4];
+            let length = self.surface.data().len();
+            let data = slice::from_raw_parts_mut(ptr, length);
+            for i in data {
+                // BGRA
+                alpha_composite(i, [0xff, 0xff, 0xff]);
+            }
         };
+
         Ok(Some(&mut self.frame_buffer))
     }
 
