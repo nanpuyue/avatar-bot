@@ -25,6 +25,7 @@ use crate::error::Error;
 struct SurfaceIter {
     surface: Surface,
     animation: Animation,
+    frame_buffer: AVFrame,
     frame_index: usize,
     totalframe: usize,
     width: i32,
@@ -32,58 +33,60 @@ struct SurfaceIter {
 }
 
 struct AVFrameIter {
+    frame_buffer: AVFrame,
     format_context: AVFormatContextInput,
     decode_context: AVCodecContext,
     stream_index: usize,
 }
 
-impl From<Animation> for SurfaceIter {
-    fn from(animation: Animation) -> Self {
+impl TryFrom<Animation> for SurfaceIter {
+    type Error = Error;
+
+    fn try_from(animation: Animation) -> Result<SurfaceIter, Self::Error> {
         let size = animation.size();
         let totalframe = animation.totalframe();
-        Self {
+        let mut frame_buffer = AVFrame::new();
+        frame_buffer.set_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA);
+        frame_buffer.set_width(size.width as _);
+        frame_buffer.set_height(size.height as _);
+        frame_buffer.alloc_buffer()?;
+        Ok(Self {
             surface: Surface::new(size),
             animation,
+            frame_buffer,
             frame_index: 0,
             totalframe,
             width: size.width as _,
             height: size.height as _,
-        }
+        })
     }
 }
 
 trait FrameDataIter {
-    fn next_frame(&mut self, frame: AVFrame) -> Option<AVFrame>;
+    fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error>;
     fn format(&self) -> i32;
     fn size(&self) -> (i32, i32);
     fn framerate(&self) -> AVRational;
 }
 
 impl FrameDataIter for SurfaceIter {
-    fn next_frame(&mut self, mut frame: AVFrame) -> Option<AVFrame> {
+    fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error> {
         if self.frame_index >= self.totalframe {
-            return None;
+            return Ok(None);
         }
         self.animation.render(self.frame_index, &mut self.surface);
         self.frame_index += 1;
 
-        if frame.make_writable().is_err() {
-            return None;
-        }
+        self.frame_buffer.make_writable()?;
         unsafe {
-            if frame
-                .fill_arrays(
-                    self.surface.data_as_bytes().as_ptr(),
-                    self.format(),
-                    self.width,
-                    self.height,
-                )
-                .is_err()
-            {
-                return None;
-            }
+            self.frame_buffer.fill_arrays(
+                self.surface.data_as_bytes().as_ptr(),
+                self.format(),
+                self.width,
+                self.height,
+            )?;
         };
-        Some(frame)
+        Ok(Some(&mut self.frame_buffer))
     }
 
     fn format(&self) -> i32 {
@@ -101,22 +104,24 @@ impl FrameDataIter for SurfaceIter {
 }
 
 impl FrameDataIter for AVFrameIter {
-    fn next_frame(&mut self, _frame: AVFrame) -> Option<AVFrame> {
+    fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error> {
         loop {
             let packet = loop {
-                match self.format_context.read_packet().ok().flatten() {
+                match self.format_context.read_packet()? {
                     Some(x) if x.stream_index != self.stream_index as i32 => {}
                     x => break x,
                 }
             };
 
-            if self.decode_context.send_packet(packet.as_ref()).is_err() {
-                break None;
-            }
+            self.decode_context.send_packet(packet.as_ref())?;
             match self.decode_context.receive_frame() {
-                Ok(x) => break Some(x),
+                Ok(x) => {
+                    self.frame_buffer = x;
+                    break Ok(Some(&mut self.frame_buffer));
+                }
                 Err(RsmpegError::DecoderDrainError) => {}
-                Err(_) => break None,
+                Err(RsmpegError::DecoderFlushedError) => break Ok(None),
+                Err(e) => break Err(e.into()),
             }
         }
     }
@@ -170,6 +175,7 @@ fn decode_video(input_format_context: AVFormatContextInput) -> Result<AVFrameIte
     };
 
     let ret = AVFrameIter {
+        frame_buffer: AVFrame::new(),
         format_context: input_format_context,
         decode_context,
         stream_index,
@@ -297,22 +303,16 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         }
         encode_context.open(None)?;
 
-        let mut frame1 = AVFrame::new();
-        frame1.set_format(src.format());
-        frame1.set_width(encode_context.width);
-        frame1.set_height(encode_context.height);
-        frame1.alloc_buffer()?;
-
-        let mut frame2 = AVFrame::new();
-        frame2.set_format(encode_context.pix_fmt);
-        frame2.set_width(encode_context.width);
-        frame2.set_height(encode_context.height);
-        frame2.alloc_buffer()?;
+        let mut dst_frame = AVFrame::new();
+        dst_frame.set_format(encode_context.pix_fmt);
+        dst_frame.set_width(encode_context.width);
+        dst_frame.set_height(encode_context.height);
+        dst_frame.alloc_buffer()?;
 
         let mut sws_context = SwsContext::get_context(
             width,
             height,
-            frame1.format,
+            src.format(),
             width,
             height,
             encode_context.pix_fmt,
@@ -332,14 +332,18 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         output_format_context.write_header(&mut None)?;
 
         let mut pts = 0;
-        while let Some(frame) = src.next_frame(frame1) {
-            frame1 = frame;
-            sws_context.scale_frame(&frame1, 0, height, &mut frame2)?;
+        while let Some(src_frame) = src.next_frame()? {
+            let frame_after = if src_frame.format == dst_frame.format {
+                src_frame
+            } else {
+                sws_context.scale_frame(src_frame, 0, height, &mut dst_frame)?;
+                &mut dst_frame
+            };
 
-            frame2.set_pts(pts);
+            frame_after.set_pts(pts);
             pts += 1;
             encode_write_frame(
-                Some(&frame2),
+                Some(frame_after),
                 &mut encode_context,
                 &mut output_format_context,
                 0,
@@ -416,7 +420,7 @@ fn flush_encoder(
 
 pub fn tgs_to_mp4(data: Vec<u8>, cache_key: &str) -> Result<Vec<u8>, Error> {
     let animation = read_animation(&data, cache_key)?;
-    let surface_iter = SurfaceIter::from(animation);
+    let surface_iter = SurfaceIter::try_from(animation)?;
 
     encode_mp4(surface_iter)
 }
