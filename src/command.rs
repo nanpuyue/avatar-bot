@@ -41,17 +41,20 @@ lazy_static! {
     };
 }
 
+#[derive(Debug)]
 pub enum Color {
     Rgb([i32; 3]),
     Trans,
 }
 
+#[derive(Debug)]
 pub enum Align {
     Top,
     Bottom,
     Center,
 }
 
+#[derive(Debug)]
 pub struct Opt {
     pub color: Color,
     pub align: Option<Align>,
@@ -59,6 +62,7 @@ pub struct Opt {
     pub show_detect: bool,
 }
 
+#[derive(Debug)]
 enum Command {
     Help,
     SetAvatar(Opt),
@@ -288,6 +292,7 @@ impl RunCommand for Client {
                 .ok_or("Failed to get reply")?;
 
             let mut is_square = false;
+            let mut is_video = false;
             let image = if let Some(media) = message.media() {
                 let mut download = false;
                 let mut mime = None;
@@ -326,6 +331,7 @@ impl RunCommand for Client {
 
                     if let Some(x) = mime {
                         if x.starts_with("video/") {
+                            is_video = true;
                             if is_square {
                                 if !x.starts_with("video/mp4") {
                                     buf = video_to_mp4(buf)?;
@@ -334,6 +340,7 @@ impl RunCommand for Client {
                                 buf = video_to_png(buf)?;
                             }
                         } else if x == "application/x-tgsticker" {
+                            is_video = true;
                             if is_square {
                                 buf = tgs_to_mp4(buf, &format!("{sticker_id}"))?;
                             } else {
@@ -352,7 +359,8 @@ impl RunCommand for Client {
             };
 
             if let Some(mut buf) = image {
-                let file_name = if is_square {
+                is_video = is_video && is_square;
+                let file_name = if is_video {
                     "file.mp4"
                 } else {
                     image_to_png(&mut buf, opt)?;
@@ -361,14 +369,14 @@ impl RunCommand for Client {
                 let uploaded = self.upload_file(buf, file_name).await?;
                 if opt.dry_run {
                     let mut input_message = InputMessage::text("").reply_to(Some(message.id()));
-                    if is_square {
+                    if is_video {
                         input_message = input_message.document(uploaded).mime_type("video/mp4");
                     } else {
                         input_message = input_message.photo(uploaded);
                     }
                     self.send_message(chat, input_message).await?;
                 } else {
-                    self.edit_photo(chat, uploaded, is_square).await?;
+                    self.edit_photo(chat, uploaded, is_video).await?;
                     *chat_last_update = Instant::now();
                 }
             } else {
