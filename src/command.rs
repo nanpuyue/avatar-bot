@@ -41,20 +41,20 @@ lazy_static! {
     };
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Color {
     Rgb([i32; 3]),
     Trans,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Align {
     Top,
     Bottom,
     Center,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Opt {
     pub color: Color,
     pub align: Option<Align>,
@@ -334,7 +334,7 @@ impl RunCommand for Client {
                             is_video = true;
                             if is_square {
                                 if !x.starts_with("video/mp4") {
-                                    buf = video_to_mp4(buf)?;
+                                    buf = video_to_mp4(buf, opt.color)?;
                                 }
                             } else {
                                 buf = video_to_png(buf)?;
@@ -342,7 +342,7 @@ impl RunCommand for Client {
                         } else if x == "application/x-tgsticker" {
                             is_video = true;
                             if is_square {
-                                buf = tgs_to_mp4(buf, &format!("{sticker_id}"))?;
+                                buf = tgs_to_mp4(buf, &format!("{sticker_id}"), opt.color)?;
                             } else {
                                 buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
                             }

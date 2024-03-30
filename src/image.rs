@@ -1,3 +1,4 @@
+use core::slice;
 use std::cmp::min;
 use std::io::Cursor;
 use std::io::Write;
@@ -17,19 +18,31 @@ use crate::command::Opt;
 use crate::error::Error;
 use crate::opencv::detect_animeface;
 
-pub fn alpha_composite(pixel: &mut [u8; 4], color: [i32; 3]) {
+#[inline]
+fn alpha_composite(pixel: &mut [u8; 4], color: [i32; 3]) {
     for i in 0..3 {
-        if pixel[3] == 0 {
-            pixel[i] = color[i] as _;
-        } else {
-            pixel[i] = (color[i] + (pixel[i] as i32 - color[i]) * pixel[3] as i32 / 255) as _;
+        match pixel[3] {
+            255 => {}
+            0 => pixel[i] = color[i] as _,
+            _ => pixel[i] = (color[i] + (pixel[i] as i32 - color[i]) * pixel[3] as i32 / 255) as _,
         }
     }
     pixel[3] = 255;
 }
 
-fn trans_flag(img: &mut RgbaImage) {
-    const COLOR: [[i32; 3]; 5] = [
+unsafe fn split_pixel(data: &mut [u8]) -> &mut [[u8; 4]] {
+    slice::from_raw_parts_mut(data.as_mut_ptr() as *mut [u8; 4], data.len() / 4)
+}
+
+pub fn set_color(data: &mut [u8], color: [i32; 3]) {
+    let data = unsafe { split_pixel(data) };
+    for i in data {
+        alpha_composite(i, color);
+    }
+}
+
+pub fn trans_flag(data: &mut [u8], width: usize, height: usize, rgb: bool) {
+    const RGB_COLOR: [[i32; 3]; 5] = [
         [0x5b, 0xce, 0xfa],
         [0xf5, 0xa9, 0xb8],
         [0xff, 0xff, 0xff],
@@ -37,23 +50,37 @@ fn trans_flag(img: &mut RgbaImage) {
         [0x5b, 0xce, 0xfa],
     ];
 
-    let mut height = img.height();
-    let width = img.width();
+    const BGR_COLOR: [[i32; 3]; 5] = [
+        [0xfa, 0xce, 0x5b],
+        [0xb8, 0xa9, 0xf5],
+        [0xff, 0xff, 0xff],
+        [0xb8, 0xa9, 0xf5],
+        [0xfa, 0xce, 0x5b],
+    ];
 
+    assert_eq!(data.len(), width * height * 4);
+    let data = unsafe { split_pixel(data) };
+    let color = if rgb { RGB_COLOR } else { BGR_COLOR };
+
+    let mut split_index = [0; 6];
+    for i in 1..6 {
+        split_index[i] = split_index[i - 1] + (height - split_index[i - 1]) / (6 - i);
+    }
+
+    let mut x = 0;
+    let mut y = 0;
     let mut color_index = 0;
-    let mut passed = height.saturating_sub(width) / 2;
-    height -= passed;
-    img.enumerate_rows_mut().for_each(|(row_index, row)| {
-        if row_index >= passed && row_index <= height {
-            if color_index < 4 && (row_index - passed) * (5 - color_index) > height - passed {
-                color_index += 1;
-                passed = row_index;
-            }
-            let b = COLOR[color_index as usize];
-            row.filter(|(_, _, x)| x[3] != 255)
-                .for_each(|(_, _, Rgba(x))| alpha_composite(x, b))
+    for i in data {
+        if y > split_index[color_index + 1] {
+            color_index += 1;
         }
-    });
+        alpha_composite(i, color[color_index]);
+        x += 1;
+        if x == width {
+            y += 1;
+            x = 0;
+        }
+    }
 }
 
 fn square_image(img: &mut RgbaImage, align: &Align) -> Option<RgbaImage> {
@@ -148,11 +175,13 @@ pub fn image_to_png(data: &mut Vec<u8>, opt: &Opt) -> Result<(), Error> {
 
     if !opt.show_detect {
         match opt.color {
-            Color::Trans => trans_flag(&mut rgba),
-            Color::Rgb(b) => {
-                rgba.pixels_mut()
-                    .filter(|x| x[3] != 255)
-                    .for_each(|Rgba(x)| alpha_composite(x, b));
+            Color::Trans => {
+                let widht = rgba.width() as _;
+                let height = rgba.height() as _;
+                trans_flag(rgba.as_mut(), widht, height, true)
+            }
+            Color::Rgb(x) => {
+                set_color(rgba.as_mut(), x);
             }
         }
     }
