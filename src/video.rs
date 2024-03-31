@@ -57,6 +57,7 @@ unsafe fn frame_set_color(frame: &mut AVFrame, color: Color) {
 trait FrameDataIter {
     fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error>;
     fn size(&self) -> (i32, i32);
+    fn time_base(&self) -> AVRational;
     fn framerate(&self) -> AVRational;
 }
 
@@ -66,7 +67,6 @@ impl FrameDataIter for SurfaceIter {
             return Ok(None);
         }
         self.animation.render(self.frame_index, &mut self.surface);
-        self.frame_index += 1;
 
         self.frame_buffer.make_writable()?;
         unsafe {
@@ -80,12 +80,19 @@ impl FrameDataIter for SurfaceIter {
             frame_set_color(&mut self.frame_buffer, self.color);
         };
 
+        self.frame_buffer.set_pts(self.frame_index as _);
+        self.frame_index += 1;
+
         Ok(Some(&mut self.frame_buffer))
     }
 
     fn size(&self) -> (i32, i32) {
         let Size { width, height } = self.animation.size();
         (width as _, height as _)
+    }
+
+    fn time_base(&self) -> AVRational {
+        av_inv_q(self.framerate())
     }
 
     fn framerate(&self) -> AVRational {
@@ -138,6 +145,7 @@ impl FrameDataIter for AVFrameIter {
                             }
                             None => return Err("Failed to get sws_context".into()),
                         }
+                        self.frame_buffer.set_pts(frame.pts);
                     } else {
                         self.frame_buffer = frame;
                     }
@@ -153,6 +161,10 @@ impl FrameDataIter for AVFrameIter {
 
     fn size(&self) -> (i32, i32) {
         (self.decode_context.width, self.decode_context.height)
+    }
+
+    fn time_base(&self) -> AVRational {
+        self.decode_context.time_base
     }
 
     fn framerate(&self) -> AVRational {
@@ -317,7 +329,6 @@ fn output_format_context() -> Result<(AVFormatContextOutput, Arc<Mutex<Cursor<Ve
 
 fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
     let buffer = {
-        let framerate = src.framerate();
         let (width, height) = src.size();
 
         let codec_name = &CString::new("libx264").unwrap();
@@ -330,8 +341,8 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         encode_context.set_bit_rate(1000000);
         encode_context.set_width(width);
         encode_context.set_height(height);
-        encode_context.set_time_base(av_inv_q(framerate));
-        encode_context.set_framerate(framerate);
+        encode_context.set_time_base(src.time_base());
+        encode_context.set_framerate(src.framerate());
         encode_context.set_gop_size(10);
         encode_context.set_max_b_frames(1);
         encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
@@ -378,17 +389,15 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
             ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
         )
         .ok_or("Failed to get sws_context")?;
-        let mut pts = 0;
         let mut encode_frame = |src_frame: &mut AVFrame| -> Result<(), Error> {
             let frame_after = if src_frame.format == dst_frame.format {
                 src_frame
             } else {
                 sws_context.scale_frame(src_frame, 0, height, &mut dst_frame)?;
+                dst_frame.set_pts(src_frame.pts);
                 &mut dst_frame
             };
 
-            frame_after.set_pts(pts);
-            pts += 1;
             encode_write_frame(
                 Some(frame_after),
                 &mut encode_context,
