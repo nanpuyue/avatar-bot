@@ -15,7 +15,7 @@ use lazy_static::lazy_static;
 use tokio::sync::Mutex;
 use tokio::task::spawn;
 
-use crate::error::{Error, Message as _};
+use crate::error::{Error, IntoErrorMessage, Message as _};
 use crate::ffmpeg::video_to_png;
 use crate::image::{image_to_png, tgs_to_png};
 use crate::opengraph::link_to_img;
@@ -236,7 +236,7 @@ impl RunCommand for Client {
         let chat = Into::<PackedChat>::into(chat);
         let channel = chat
             .try_to_input_channel()
-            .ok_or("Failed to get input_channel")?;
+            .ok_or("获取群组信息失败".error())?;
 
         let mut photo = InputChatUploadedPhoto {
             file: None,
@@ -269,19 +269,12 @@ impl RunCommand for Client {
         let chat_id = chat.id();
 
         let mut chat_last_update = if let Some(x) = LAST_UPDATE.get(&chat_id) {
-            x.lock().await
+            x.try_lock().or("正在处理之前的请求, 请稍后...".result())?
         } else {
-            self.send_message(
-                chat,
-                InputMessage::text(format!("尚未向本群组 ({chat_id}) 提供服务")),
-            )
-            .await?;
-            return Ok(());
+            return format!("尚未向本群组 ({chat_id}) 提供服务").result();
         };
         if !opt.dry_run && chat_last_update.elapsed() < MIN_INTERVAL {
-            self.send_message(chat, InputMessage::text("技能冷却中"))
-                .await?;
-            return Ok(());
+            return "技能冷却中".result();
         }
 
         if let Some(ref x) = message.reply_to_message_id() {
@@ -289,7 +282,7 @@ impl RunCommand for Client {
                 .get_messages_by_id(chat, &[*x])
                 .await?
                 .swap_remove(0)
-                .ok_or("Failed to get reply")?;
+                .ok_or("读取引用的消息失败".error())?;
 
             let mut is_square = false;
             let mut is_video = false;
@@ -380,14 +373,10 @@ impl RunCommand for Client {
                     *chat_last_update = Instant::now();
                 }
             } else {
-                self.send_message(chat, "未检测到受支持的头像").await?;
+                return "未检测到受支持的头像".result();
             }
         } else {
-            self.send_message(
-                chat,
-                "使用 set_avatar 命令时请回复包含头像的消息 (照片、视频、贴纸、文件)",
-            )
-            .await?;
+            return "使用 set_avatar 命令时请回复包含头像的消息 (照片、视频、贴纸、文件)".result();
         }
         Ok(())
     }
@@ -407,7 +396,8 @@ pub fn handle_update(client: &Client, update: Update) {
                     if let Err(e) = ret {
                         match e.message() {
                             Some(x) => {
-                                let error_message = InputMessage::text(x);
+                                let error_message =
+                                    InputMessage::text(x).reply_to(Some(message.id()));
                                 if let Err(e) =
                                     bot.send_message(&message.chat(), error_message).await
                                 {
