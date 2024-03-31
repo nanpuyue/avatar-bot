@@ -1,7 +1,8 @@
 use std::ffi::CStr;
 use std::io::Read;
 use std::slice;
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};

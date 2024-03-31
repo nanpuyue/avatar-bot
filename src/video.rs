@@ -1,25 +1,20 @@
-use std::io::Read;
+use std::ffi::{CStr, CString};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::slice;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
-use std::{
-    ffi::{CStr, CString},
-    io::{Cursor, Seek, SeekFrom, Write},
-    sync::{atomic::AtomicUsize, Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use flate2::write::GzDecoder;
 use rlottie::{Animation, Size, Surface};
-use rsmpeg::avutil::{av_d2q, av_inv_q};
-use rsmpeg::{
-    avcodec::{AVCodec, AVCodecContext},
-    avformat::{
-        AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
-    },
-    avutil::{AVFrame, AVMem, AVRational},
-    error::RsmpegError,
-    ffi,
-    swscale::SwsContext,
+use rsmpeg::avcodec::{AVCodec, AVCodecContext};
+use rsmpeg::avformat::{
+    AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
 };
+use rsmpeg::avutil::{av_d2q, av_inv_q, AVFrame, AVMem, AVRational};
+use rsmpeg::error::RsmpegError;
+use rsmpeg::ffi;
+use rsmpeg::swscale::SwsContext;
 
 use crate::command::Color;
 use crate::error::Error;

@@ -1,7 +1,5 @@
-use std::{
-    error,
-    fmt::{self, Debug, Display, Formatter},
-};
+use std::error;
+use std::fmt::{self, Debug, Display, Formatter};
 
 use grammers_client::client::bots::InvocationError;
 

@@ -1,20 +1,16 @@
-use core::slice;
 use std::cmp::min;
-use std::io::Cursor;
-use std::io::Write;
+use std::io::{Cursor, Write};
+use std::slice;
 
 use flate2::write::GzDecoder;
-use image::load_from_memory;
 use image::math::Rect;
-use image::GenericImage;
-use image::{DynamicImage, ImageFormat::Png, Rgba, RgbaImage};
+use image::ImageFormat::Png;
+use image::{load_from_memory, DynamicImage, GenericImage, Rgba, RgbaImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect;
 use rlottie::{Animation, Surface};
 
-use crate::command::Align;
-use crate::command::Color;
-use crate::command::Opt;
+use crate::command::{Align, Color, Opt};
 use crate::error::Error;
 use crate::opencv::detect_animeface;
 
