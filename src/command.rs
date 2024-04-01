@@ -14,6 +14,7 @@ use grammers_tl_types::types::{InputChatUploadedPhoto, MessageEntityCode};
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
 use tokio::task::spawn;
+use tokio::time::timeout;
 
 use crate::error::{Error, IntoErrorMessage, Message as _};
 use crate::ffmpeg::video_to_png;
@@ -22,6 +23,7 @@ use crate::opengraph::link_to_img;
 use crate::video::{tgs_to_mp4, video_to_mp4};
 use crate::USERNAME;
 
+const SET_TIMEOUT: Duration = Duration::from_secs(60);
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_FILESIZE: usize = 10 * 1024 * 1024;
 
@@ -391,7 +393,11 @@ pub fn handle_update(client: &Client, update: Update) {
                 spawn(async move {
                     let ret = match command {
                         Command::Help => bot.help(&message).await,
-                        Command::SetAvatar(opt) => bot.set_avatar(&message, &opt).await,
+                        Command::SetAvatar(opt) => {
+                            timeout(SET_TIMEOUT, bot.set_avatar(&message, &opt))
+                                .await
+                                .unwrap_or("请求处理超时".result())
+                        }
                     };
                     if let Err(e) = ret {
                         match e.message() {
