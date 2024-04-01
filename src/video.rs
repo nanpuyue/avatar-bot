@@ -370,7 +370,6 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         {
             let mut out_stream = output_format_context.new_stream();
             out_stream.set_codecpar(encode_context.extract_codecpar());
-            out_stream.set_time_base(encode_context.time_base);
         }
 
         output_format_context.dump(0, unsafe {
