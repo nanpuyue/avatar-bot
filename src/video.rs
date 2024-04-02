@@ -1,4 +1,3 @@
-use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::slice;
 use std::sync::atomic::AtomicUsize;
@@ -19,8 +18,6 @@ use rsmpeg::swscale::SwsContext;
 use crate::command::Color;
 use crate::error::Error;
 use crate::image::{set_color, trans_flag};
-
-const LIBVPX_VP9: &CStr = unsafe { CStr::from_bytes_with_nul_unchecked(b"libvpx-vp9\0") };
 
 struct SurfaceIter {
     surface: Surface,
@@ -211,11 +208,11 @@ fn decode_video(
             .ok_or("Failed to find the best stream")?;
         let stream = input_format_context.streams().get(stream_index).unwrap();
 
-        if decoder.name().to_str() == Ok("vp9") {
-            decoder = match AVCodec::find_decoder_by_name(LIBVPX_VP9) {
+        if decoder.name() == c"vp9" {
+            decoder = match AVCodec::find_decoder_by_name(c"libvpx-vp9") {
                 Some(x) => x,
                 None => {
-                    println!("the decoder is not found: {LIBVPX_VP9:?}");
+                    println!("the decoder is not found: libvpx-vp9");
                     decoder
                 }
             };
@@ -319,10 +316,8 @@ fn output_format_context() -> Result<(AVFormatContextOutput, Arc<Mutex<Cursor<Ve
         })),
     );
 
-    let output_format_context = AVFormatContextOutput::create(
-        CStr::from_bytes_with_nul(b".mp4\0").unwrap(),
-        Some(AVIOContextContainer::Custom(io_context)),
-    )?;
+    let output_format_context =
+        AVFormatContextOutput::create(c".mp4", Some(AVIOContextContainer::Custom(io_context)))?;
 
     Ok((output_format_context, buffer))
 }
@@ -330,13 +325,10 @@ fn output_format_context() -> Result<(AVFormatContextOutput, Arc<Mutex<Cursor<Ve
 fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
     let buffer = {
         let (width, height) = src.size();
-
-        let codec_name = &CString::new("libx264").unwrap();
-
         let (mut output_format_context, buffer) = output_format_context()?;
 
         let encoder =
-            AVCodec::find_encoder_by_name(codec_name).ok_or("Failed to find encoder codec")?;
+            AVCodec::find_encoder_by_name(c"libx264").ok_or("Failed to find encoder codec")?;
         let mut encode_context = AVCodecContext::new(&encoder);
         encode_context.set_bit_rate(1000000);
         encode_context.set_width(width);
@@ -346,11 +338,15 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         encode_context.set_gop_size(10);
         encode_context.set_max_b_frames(1);
         encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
-        let name = CString::new("preset").unwrap();
-        let val = CString::new("slow").unwrap();
         if encoder.id == ffi::AVCodecID_AV_CODEC_ID_H264 {
             unsafe {
-                if ffi::av_opt_set(encode_context.priv_data, name.as_ptr(), val.as_ptr(), 0) < 0 {
+                if ffi::av_opt_set(
+                    encode_context.priv_data,
+                    c"preset".as_ptr(),
+                    c"slow".as_ptr(),
+                    0,
+                ) < 0
+                {
                     return Err("Failed to set preset".into());
                 }
             }
@@ -372,9 +368,7 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
             out_stream.set_codecpar(encode_context.extract_codecpar());
         }
 
-        output_format_context.dump(0, unsafe {
-            CStr::from_bytes_with_nul_unchecked(b"file.mp4\0")
-        })?;
+        output_format_context.dump(0, c"file.mp4")?;
         output_format_context.write_header(&mut None)?;
 
         let first_frame = src.next_frame()?.ok_or("Failed to get first frame")?;

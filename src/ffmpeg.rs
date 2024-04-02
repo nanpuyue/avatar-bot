@@ -1,4 +1,3 @@
-use std::ffi::CStr;
 use std::io::Read;
 use std::slice;
 use std::sync::atomic::AtomicUsize;
@@ -59,11 +58,8 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
             .ok_or("Failed to find the best stream")?;
         let stream = input_format_context.streams().get(stream_index).unwrap();
 
-        if decoder.name().to_str() == Ok("vp9") {
-            decoder = AVCodec::find_decoder_by_name(unsafe {
-                CStr::from_bytes_with_nul_unchecked(b"libvpx-vp9\0")
-            })
-            .unwrap_or_else(|| {
+        if decoder.name() == c"vp9" {
+            decoder = AVCodec::find_decoder_by_name(c"libvpx-vp9").unwrap_or_else(|| {
                 eprintln!("the decoder is not found: libvpx-vp9");
                 decoder
             });
