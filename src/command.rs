@@ -17,7 +17,6 @@ use tokio::task::spawn;
 use tokio::time::timeout;
 
 use crate::error::{Error, IntoErrorMessage, Message as _};
-use crate::ffmpeg::video_to_png;
 use crate::image::{image_to_png, tgs_to_png};
 use crate::opengraph::link_to_img;
 use crate::video::{tgs_to_mp4, video_to_mp4};
@@ -327,12 +326,9 @@ impl RunCommand for Client {
                     if let Some(x) = mime {
                         if x.starts_with("video/") {
                             is_video = true;
-                            if is_square {
-                                if !x.starts_with("video/mp4") {
-                                    buf = video_to_mp4(buf, opt.color)?;
-                                }
-                            } else {
-                                buf = video_to_png(buf)?;
+                            if !is_square || !x.starts_with("video/mp4") {
+                                buf = video_to_mp4(buf, opt.color)?;
+                                is_square = true
                             }
                         } else if x == "application/x-tgsticker" {
                             is_video = true;

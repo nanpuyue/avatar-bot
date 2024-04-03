@@ -1,12 +1,15 @@
+use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
-use std::slice;
+use std::ptr::NonNull;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
+use std::{ptr, slice};
 
 use flate2::write::GzDecoder;
 use rlottie::{Animation, Size, Surface};
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
+use rsmpeg::avfilter::{AVFilter, AVFilterContextMut, AVFilterGraph, AVFilterInOut};
 use rsmpeg::avformat::{
     AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
 };
@@ -30,12 +33,85 @@ struct SurfaceIter {
     color: Color,
 }
 
+struct FilterGraph {
+    _graph: AVFilterGraph,
+    input: AVFilterContextMut<'static>,
+    output: AVFilterContextMut<'static>,
+}
+
+impl FilterGraph {
+    fn new(dec_ctx: &AVCodecContext, output_fmt: i32, filter_spec: &CStr) -> Result<Self, Error> {
+        let filter_graph = AVFilterGraph::new();
+
+        let (mut buffersrc_ctx, mut buffersink_ctx) = {
+            let buffersrc = AVFilter::get_by_name(c"buffer")?;
+            let buffersink = AVFilter::get_by_name(c"buffersink")?;
+
+            let args = format!(
+                "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect={}/{}",
+                dec_ctx.width,
+                dec_ctx.height,
+                dec_ctx.pix_fmt,
+                dec_ctx.time_base.num,
+                dec_ctx.time_base.den,
+                dec_ctx.sample_aspect_ratio.num,
+                dec_ctx.sample_aspect_ratio.den,
+            );
+            let args = &CString::new(args).unwrap();
+
+            unsafe fn create_filter_context(
+                graph: &AVFilterGraph,
+                filter: &AVFilter,
+                name: &CStr,
+                args: Option<&CStr>,
+            ) -> Result<AVFilterContextMut<'static>, Error> {
+                let args_ptr = args.map(|s| s.as_ptr()).unwrap_or(ptr::null());
+                let mut filter_context = ptr::null_mut();
+                let e = ffi::avfilter_graph_create_filter(
+                    &mut filter_context,
+                    filter.as_ptr(),
+                    name.as_ptr(),
+                    args_ptr,
+                    ptr::null_mut(),
+                    graph.as_ptr() as *mut _,
+                );
+                if e < 0 {
+                    return Err(RsmpegError::CreateFilterError(e).into());
+                }
+
+                let filter_context = NonNull::new(filter_context).unwrap();
+                Ok(AVFilterContextMut::from_raw(filter_context))
+            }
+
+            let buffer_src_context =
+                unsafe { create_filter_context(&filter_graph, &buffersrc, c"in", Some(args)) }?;
+            let mut buffer_sink_context =
+                unsafe { create_filter_context(&filter_graph, &buffersink, c"out", None) }?;
+            buffer_sink_context.set_property(c"pix_fmts", &output_fmt)?;
+
+            (buffer_src_context, buffer_sink_context)
+        };
+
+        let outputs = AVFilterInOut::new(c"in", &mut buffersrc_ctx, 0);
+        let inputs = AVFilterInOut::new(c"out", &mut buffersink_ctx, 0);
+        let _ = filter_graph.parse_ptr(filter_spec, Some(inputs), Some(outputs))?;
+
+        filter_graph.config()?;
+
+        Ok(Self {
+            _graph: filter_graph,
+            input: buffersrc_ctx,
+            output: buffersink_ctx,
+        })
+    }
+}
+
 struct AVFrameIter {
     frame_buffer: AVFrame,
     format_context: AVFormatContextInput,
     decode_context: AVCodecContext,
     stream_index: usize,
-    sws_context: Option<SwsContext>,
+    filter_graph: Option<FilterGraph>,
     color: Color,
 }
 
@@ -107,44 +183,51 @@ impl FrameDataIter for AVFrameIter {
                 }
             };
 
-            self.decode_context.send_packet(packet.as_ref())?;
-            match self.decode_context.receive_frame() {
-                Ok(frame) => {
-                    if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
-                        if self.sws_context.is_none() {
-                            let (width, height) = self.size();
-                            self.sws_context = SwsContext::get_context(
-                                width,
-                                height,
-                                frame.format,
-                                width,
-                                height,
-                                ffi::AVPixelFormat_AV_PIX_FMT_BGRA,
-                                0,
-                            );
-                            self.frame_buffer
-                                .set_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA);
-                            self.frame_buffer.set_width(width);
-                            self.frame_buffer.set_height(height);
-                            self.frame_buffer.alloc_buffer()?;
-                        }
+            match self.decode_context.send_packet(packet.as_ref()) {
+                Ok(_) | Err(RsmpegError::DecoderFlushedError) => {}
+                Err(e) => return Err(e.into()),
+            };
 
-                        match &mut self.sws_context {
-                            Some(x) => {
-                                self.frame_buffer.make_writable()?;
-                                x.scale_frame(
-                                    &frame,
-                                    0,
-                                    self.decode_context.height,
-                                    &mut self.frame_buffer,
-                                )?;
-                                unsafe { frame_set_color(&mut self.frame_buffer, self.color) };
-                            }
-                            None => return Err("Failed to get sws_context".into()),
-                        }
-                        self.frame_buffer.set_pts(frame.pts);
+            match self.decode_context.receive_frame() {
+                Ok(mut frame) => {
+                    if self.filter_graph.is_none()
+                        && (frame.width != frame.height
+                            || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P)
+                    {
+                        let output_fmt = if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
+                            ffi::AVPixelFormat_AV_PIX_FMT_BGRA
+                        } else {
+                            ffi::AVPixelFormat_AV_PIX_FMT_YUV420P
+                        };
+
+                        let diff = frame.width - frame.height;
+                        let (x, y, length) = if diff > 0 {
+                            (diff / 2, 0, frame.height)
+                        } else {
+                            (0, -diff / 2, frame.width)
+                        };
+                        let filter_sepc =
+                            format!("crop={length}:{length}:{x}:{y},scale={length}:{length}");
+
+                        let filter_graph = FilterGraph::new(
+                            &self.decode_context,
+                            output_fmt,
+                            &CString::new(filter_sepc).unwrap(),
+                        )?;
+                        self.filter_graph = Some(filter_graph);
+                    }
+                    self.frame_buffer = if let Some(filter_graph) = self.filter_graph.as_mut() {
+                        let pts = frame.pts;
+                        filter_graph.input.buffersrc_add_frame(Some(frame), None)?;
+                        let mut frame = filter_graph.output.buffersink_get_frame(None)?;
+                        frame.set_pts(pts);
+                        frame
                     } else {
-                        self.frame_buffer = frame;
+                        frame
+                    };
+
+                    if self.frame_buffer.format == ffi::AVPixelFormat_AV_PIX_FMT_BGRA {
+                        unsafe { frame_set_color(&mut self.frame_buffer, self.color) };
                     }
 
                     break Ok(Some(&mut self.frame_buffer));
@@ -221,7 +304,7 @@ fn decode_video(
         let mut decode_context = AVCodecContext::new(&decoder);
         decode_context.apply_codecpar(&stream.codecpar())?;
         decode_context.open(None)?;
-        decode_context.set_framerate(stream.r_frame_rate);
+        decode_context.set_framerate(stream.avg_frame_rate);
         decode_context.set_time_base(stream.time_base);
 
         (stream_index, decode_context)
@@ -232,7 +315,7 @@ fn decode_video(
         format_context: input_format_context,
         decode_context,
         stream_index,
-        sws_context: None,
+        filter_graph: None,
         color,
     };
 
@@ -324,7 +407,12 @@ fn output_format_context() -> Result<(AVFormatContextOutput, Arc<Mutex<Cursor<Ve
 
 fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
     let buffer = {
-        let (width, height) = src.size();
+        let time_base = src.time_base();
+        let framerate = src.framerate();
+        let first_frame = src.next_frame()?.ok_or("Failed to get first frame")?;
+        let width = first_frame.width;
+        let height = first_frame.height;
+
         let (mut output_format_context, buffer) = output_format_context()?;
 
         let encoder =
@@ -333,8 +421,8 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         encode_context.set_bit_rate(1000000);
         encode_context.set_width(width);
         encode_context.set_height(height);
-        encode_context.set_time_base(src.time_base());
-        encode_context.set_framerate(src.framerate());
+        encode_context.set_time_base(time_base);
+        encode_context.set_framerate(framerate);
         encode_context.set_gop_size(10);
         encode_context.set_max_b_frames(1);
         encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
@@ -371,7 +459,6 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         output_format_context.dump(0, c"file.mp4")?;
         output_format_context.write_header(&mut None)?;
 
-        let first_frame = src.next_frame()?.ok_or("Failed to get first frame")?;
         let mut sws_context = SwsContext::get_context(
             width,
             height,
