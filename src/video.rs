@@ -464,8 +464,7 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
             encode_frame(src_frame)?;
         }
 
-        flush_encoder(&mut encode_context, &mut output_format_context, 0)?;
-
+        encode_write_frame(None, &mut encode_context, &mut output_format_context, 0)?;
         output_format_context.write_trailer()?;
 
         buffer
@@ -513,23 +512,6 @@ fn encode_write_frame(
     }
 
     Ok(())
-}
-
-/// Send an empty packet to the `encode_context` for packet flushing.
-fn flush_encoder(
-    encode_context: &mut AVCodecContext,
-    output_format_context: &mut AVFormatContextOutput,
-    out_stream_index: usize,
-) -> Result<(), Error> {
-    if encode_context.codec().capabilities & ffi::AV_CODEC_CAP_DELAY as i32 == 0 {
-        return Ok(());
-    }
-    encode_write_frame(
-        None,
-        encode_context,
-        output_format_context,
-        out_stream_index,
-    )
 }
 
 pub fn tgs_to_mp4(data: Vec<u8>, cache_key: &str, color: Color) -> Result<Vec<u8>, Error> {
