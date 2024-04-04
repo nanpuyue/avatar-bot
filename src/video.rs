@@ -189,7 +189,11 @@ impl FrameDataIter for AVFrameIter {
             };
 
             match self.decode_context.receive_frame() {
-                Ok(mut frame) => {
+                Ok(frame) => {
+                    let time_base = self.time_base();
+                    if (frame.pts as i32) * time_base.num > 10 * time_base.den {
+                        return Ok(None);
+                    }
                     if self.filter_graph.is_none()
                         && (frame.width != frame.height
                             || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P)
