@@ -121,6 +121,9 @@ impl FrameDataIter for AVFrameIter {
                     if (frame.pts as i32) * time_base.num > 10 * time_base.den {
                         return Ok(None);
                     }
+                    if frame.pts == self.frame_buffer.pts {
+                        continue;
+                    }
 
                     if self.sws_context.is_none()
                         && (frame.width != frame.height
@@ -277,8 +280,11 @@ fn decode_video(
         (stream_index, decode_context)
     };
 
+    let mut frame_buffer = AVFrame::new();
+    frame_buffer.set_pts(-1);
+
     let ret = AVFrameIter {
-        frame_buffer: AVFrame::new(),
+        frame_buffer,
         format_context: input_format_context,
         decode_context,
         stream_index,
