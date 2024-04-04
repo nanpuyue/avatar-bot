@@ -1,15 +1,12 @@
-use std::ffi::{CStr, CString};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
-use std::ptr::NonNull;
+use std::slice;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
-use std::{ptr, slice};
 
 use flate2::write::GzDecoder;
 use rlottie::{Animation, Size, Surface};
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
-use rsmpeg::avfilter::{AVFilter, AVFilterContextMut, AVFilterGraph, AVFilterInOut};
 use rsmpeg::avformat::{
     AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
 };
@@ -33,85 +30,13 @@ struct SurfaceIter {
     color: Color,
 }
 
-struct FilterGraph {
-    _graph: AVFilterGraph,
-    input: AVFilterContextMut<'static>,
-    output: AVFilterContextMut<'static>,
-}
-
-impl FilterGraph {
-    fn new(dec_ctx: &AVCodecContext, output_fmt: i32, filter_spec: &CStr) -> Result<Self, Error> {
-        let filter_graph = AVFilterGraph::new();
-
-        let (mut buffersrc_ctx, mut buffersink_ctx) = {
-            let buffersrc = AVFilter::get_by_name(c"buffer")?;
-            let buffersink = AVFilter::get_by_name(c"buffersink")?;
-
-            let args = format!(
-                "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect={}/{}",
-                dec_ctx.width,
-                dec_ctx.height,
-                dec_ctx.pix_fmt,
-                dec_ctx.time_base.num,
-                dec_ctx.time_base.den,
-                dec_ctx.sample_aspect_ratio.num,
-                dec_ctx.sample_aspect_ratio.den,
-            );
-            let args = &CString::new(args).unwrap();
-
-            unsafe fn create_filter_context(
-                graph: &AVFilterGraph,
-                filter: &AVFilter,
-                name: &CStr,
-                args: Option<&CStr>,
-            ) -> Result<AVFilterContextMut<'static>, Error> {
-                let args_ptr = args.map(|s| s.as_ptr()).unwrap_or(ptr::null());
-                let mut filter_context = ptr::null_mut();
-                let e = ffi::avfilter_graph_create_filter(
-                    &mut filter_context,
-                    filter.as_ptr(),
-                    name.as_ptr(),
-                    args_ptr,
-                    ptr::null_mut(),
-                    graph.as_ptr() as *mut _,
-                );
-                if e < 0 {
-                    return Err(RsmpegError::CreateFilterError(e).into());
-                }
-
-                let filter_context = NonNull::new(filter_context).unwrap();
-                Ok(AVFilterContextMut::from_raw(filter_context))
-            }
-
-            let buffer_src_context =
-                unsafe { create_filter_context(&filter_graph, &buffersrc, c"in", Some(args)) }?;
-            let mut buffer_sink_context =
-                unsafe { create_filter_context(&filter_graph, &buffersink, c"out", None) }?;
-            buffer_sink_context.set_property(c"pix_fmts", &output_fmt)?;
-
-            (buffer_src_context, buffer_sink_context)
-        };
-
-        let outputs = AVFilterInOut::new(c"in", &mut buffersrc_ctx, 0);
-        let inputs = AVFilterInOut::new(c"out", &mut buffersink_ctx, 0);
-        let _ = filter_graph.parse_ptr(filter_spec, Some(inputs), Some(outputs))?;
-
-        filter_graph.config()?;
-
-        Ok(Self {
-            _graph: filter_graph,
-            input: buffersrc_ctx,
-            output: buffersink_ctx,
-        })
-    }
-}
-
+#[allow(clippy::type_complexity)]
 struct AVFrameIter {
     frame_buffer: AVFrame,
     format_context: AVFormatContextInput,
     decode_context: AVCodecContext,
     stream_index: usize,
-    filter_graph: Option<FilterGraph>,
+    sws_context: Option<(SwsContext, Box<dyn FnMut(&mut AVFrame) -> i32>)>,
     color: Color,
 }
 
@@ -189,16 +114,17 @@ impl FrameDataIter for AVFrameIter {
             };
 
             match self.decode_context.receive_frame() {
-                Ok(frame) => {
+                Ok(mut frame) => {
                     let time_base = self.time_base();
                     if (frame.pts as i32) * time_base.num > 10 * time_base.den {
                         return Ok(None);
                     }
-                    if self.filter_graph.is_none()
+
+                    if self.sws_context.is_none()
                         && (frame.width != frame.height
                             || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P)
                     {
-                        let output_fmt = if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
+                        let dst_fromat = if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
                             ffi::AVPixelFormat_AV_PIX_FMT_BGRA
                         } else {
                             ffi::AVPixelFormat_AV_PIX_FMT_YUV420P
@@ -210,28 +136,51 @@ impl FrameDataIter for AVFrameIter {
                         } else {
                             (0, -diff / 2, frame.width)
                         };
-                        let filter_sepc =
-                            format!("crop={length}:{length}:{x}:{y},scale={length}:{length}");
 
-                        let filter_graph = FilterGraph::new(
-                            &self.decode_context,
-                            output_fmt,
-                            &CString::new(filter_sepc).unwrap(),
-                        )?;
-                        self.filter_graph = Some(filter_graph);
+                        let sws_context = SwsContext::get_context(
+                            length,
+                            length,
+                            frame.format,
+                            length,
+                            length,
+                            dst_fromat,
+                            0,
+                        )
+                        .ok_or("Failed to get sws_context")?;
+                        let crop_frame = move |frame: &mut AVFrame| {
+                            let frame: &mut ffi::AVFrame = unsafe { &mut *frame.as_mut_ptr() };
+                            frame.crop_left = x as _;
+                            frame.crop_right = (frame.width - x - length) as _;
+                            frame.crop_top = y as _;
+                            frame.crop_bottom = (frame.height - y - length) as _;
+
+                            unsafe {
+                                ffi::av_frame_apply_cropping(
+                                    frame,
+                                    ffi::AV_FRAME_CROP_UNALIGNED as _,
+                                )
+                            }
+                        };
+                        self.sws_context = Some((sws_context, Box::new(crop_frame)));
+
+                        self.frame_buffer.set_format(dst_fromat);
+                        self.frame_buffer.set_width(length);
+                        self.frame_buffer.set_height(length);
+                        self.frame_buffer.alloc_buffer()?;
                     }
-                    self.frame_buffer = if let Some(filter_graph) = self.filter_graph.as_mut() {
-                        let pts = frame.pts;
-                        filter_graph.input.buffersrc_add_frame(Some(frame), None)?;
-                        let mut frame = filter_graph.output.buffersink_get_frame(None)?;
-                        frame.set_pts(pts);
-                        frame
-                    } else {
-                        frame
-                    };
 
-                    if self.frame_buffer.format == ffi::AVPixelFormat_AV_PIX_FMT_BGRA {
-                        unsafe { frame_set_color(&mut self.frame_buffer, self.color) };
+                    if let Some((sws_ctx, crop_frame)) = &mut self.sws_context {
+                        if crop_frame(&mut frame) != 0 || frame.width != frame.height {
+                            return Err("Failed to crop frame".into());
+                        };
+                        self.frame_buffer.make_writable()?;
+                        sws_ctx.scale_frame(&frame, 0, frame.height, &mut self.frame_buffer)?;
+                        if self.frame_buffer.format == ffi::AVPixelFormat_AV_PIX_FMT_BGRA {
+                            unsafe { frame_set_color(&mut self.frame_buffer, self.color) };
+                        }
+                        self.frame_buffer.set_pts(frame.pts);
+                    } else {
+                        self.frame_buffer = frame;
                     }
 
                     break Ok(Some(&mut self.frame_buffer));
@@ -319,7 +268,7 @@ fn decode_video(
         format_context: input_format_context,
         decode_context,
         stream_index,
-        filter_graph: None,
+        sws_context: None,
         color,
     };
 
