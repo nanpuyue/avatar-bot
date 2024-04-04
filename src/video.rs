@@ -36,7 +36,8 @@ struct AVFrameIter {
     format_context: AVFormatContextInput,
     decode_context: AVCodecContext,
     stream_index: usize,
-    sws_context: Option<(SwsContext, Box<dyn FnMut(&mut AVFrame) -> i32>)>,
+    sws_context: Option<SwsContext>,
+    crop_frame: Option<Box<dyn FnMut(&mut AVFrame) -> i32>>,
     color: Color,
 }
 
@@ -147,21 +148,29 @@ impl FrameDataIter for AVFrameIter {
                             0,
                         )
                         .ok_or("Failed to get sws_context")?;
-                        let crop_frame = move |frame: &mut AVFrame| {
-                            let frame: &mut ffi::AVFrame = unsafe { &mut *frame.as_mut_ptr() };
-                            frame.crop_left = x as _;
-                            frame.crop_right = (frame.width - x - length) as _;
-                            frame.crop_top = y as _;
-                            frame.crop_bottom = (frame.height - y - length) as _;
+                        self.sws_context = Some(sws_context);
 
-                            unsafe {
-                                ffi::av_frame_apply_cropping(
-                                    frame,
-                                    ffi::AV_FRAME_CROP_UNALIGNED as _,
-                                )
-                            }
-                        };
-                        self.sws_context = Some((sws_context, Box::new(crop_frame)));
+                        if frame.width != frame.height {
+                            let crop_frame = move |frame: &mut AVFrame| {
+                                if frame.width == frame.height {
+                                    return 0;
+                                }
+
+                                let frame: &mut ffi::AVFrame = unsafe { &mut *frame.as_mut_ptr() };
+                                frame.crop_left = x as _;
+                                frame.crop_right = (frame.width - x - length) as _;
+                                frame.crop_top = y as _;
+                                frame.crop_bottom = (frame.height - y - length) as _;
+
+                                unsafe {
+                                    ffi::av_frame_apply_cropping(
+                                        frame,
+                                        ffi::AV_FRAME_CROP_UNALIGNED as _,
+                                    )
+                                }
+                            };
+                            self.crop_frame = Some(Box::new(crop_frame));
+                        }
 
                         self.frame_buffer.set_format(dst_fromat);
                         self.frame_buffer.set_width(length);
@@ -169,9 +178,11 @@ impl FrameDataIter for AVFrameIter {
                         self.frame_buffer.alloc_buffer()?;
                     }
 
-                    if let Some((sws_ctx, crop_frame)) = &mut self.sws_context {
-                        if crop_frame(&mut frame) != 0 || frame.width != frame.height {
-                            return Err("Failed to crop frame".into());
+                    if let Some(sws_ctx) = &mut self.sws_context {
+                        if let Some(crop_frame) = self.crop_frame.as_mut() {
+                            if crop_frame(&mut frame) != 0 || frame.width != frame.height {
+                                return Err("Failed to crop frame".into());
+                            }
                         };
                         self.frame_buffer.make_writable()?;
                         sws_ctx.scale_frame(&frame, 0, frame.height, &mut self.frame_buffer)?;
@@ -269,6 +280,7 @@ fn decode_video(
         decode_context,
         stream_index,
         sws_context: None,
+        crop_frame: None,
         color,
     };
 
