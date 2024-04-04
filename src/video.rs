@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::slice;
 use std::sync::atomic::AtomicUsize;
@@ -123,7 +124,8 @@ impl FrameDataIter for AVFrameIter {
 
                     if self.sws_context.is_none()
                         && (frame.width != frame.height
-                            || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P)
+                            || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P
+                            || min(frame.width, frame.height) % 2 != 0)
                     {
                         let dst_fromat = if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
                             ffi::AVPixelFormat_AV_PIX_FMT_BGRA
@@ -138,12 +140,13 @@ impl FrameDataIter for AVFrameIter {
                             (0, -diff / 2, frame.width)
                         };
 
+                        let dst_length = length + length % 2;
                         let sws_context = SwsContext::get_context(
                             length,
                             length,
                             frame.format,
-                            length,
-                            length,
+                            dst_length,
+                            dst_length,
                             dst_fromat,
                             0,
                         )
@@ -173,8 +176,8 @@ impl FrameDataIter for AVFrameIter {
                         }
 
                         self.frame_buffer.set_format(dst_fromat);
-                        self.frame_buffer.set_width(length);
-                        self.frame_buffer.set_height(length);
+                        self.frame_buffer.set_width(dst_length);
+                        self.frame_buffer.set_height(dst_length);
                         self.frame_buffer.alloc_buffer()?;
                     }
 
