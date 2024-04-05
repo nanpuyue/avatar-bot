@@ -337,6 +337,8 @@ impl RunCommand for Client {
                             } else {
                                 buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
                             }
+                        } else if !x.starts_with("image/") {
+                            return "不支持的文件类型".result();
                         }
                     }
                     Some(buf)
@@ -396,18 +398,14 @@ pub fn handle_update(client: &Client, update: Update) {
                         }
                     };
                     if let Err(e) = ret {
-                        match e.message() {
-                            Some(x) => {
-                                let error_message =
-                                    InputMessage::text(x).reply_to(Some(message.id()));
-                                if let Err(e) =
-                                    bot.send_message(&message.chat(), error_message).await
-                                {
-                                    println!("Failed to send error message \"{x}\": {e}");
-                                }
-                            }
-                            None => println!("Failed to handle update: {e}"),
-                        };
+                        let error = e.message().unwrap_or_else(|| {
+                            println!("Failed to handle update: {e}");
+                            "发生了一些错误"
+                        });
+                        let error_message = InputMessage::text(error).reply_to(Some(message.id()));
+                        if let Err(e) = bot.send_message(&message.chat(), error_message).await {
+                            println!("Failed to send error message \"{error}\": {e}");
+                        }
                     };
                 });
             }
