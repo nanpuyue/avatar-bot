@@ -2,6 +2,9 @@ name: build avatar-bot-builder
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - builder/**
 
 env:
   PACKAGE_NAME: avatar-bot-builder
