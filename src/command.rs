@@ -321,15 +321,15 @@ impl RunCommand for Client {
             }
             let notify = Notified(notify);
 
-            let message = self
+            let media_message = self
                 .get_messages_by_id(chat, &[*x])
                 .await?
                 .swap_remove(0)
-                .ok_or("读取引用的消息失败".error())?;
+                .ok_or("读取回复的消息失败".error())?;
 
             let mut is_square = false;
             let mut is_video = false;
-            let image = if let Some(media) = message.media() {
+            let image = if let Some(media) = media_message.media() {
                 let mut download = false;
                 let mut mime = None;
                 let mut sticker_id = 0;
@@ -384,7 +384,7 @@ impl RunCommand for Client {
                         }
                     }
                     Some(buf)
-                } else if let Some(x) = message.url() {
+                } else if let Some(x) = media_message.url() {
                     link_to_img(x).await?
                 } else {
                     None
@@ -406,7 +406,7 @@ impl RunCommand for Client {
                 drop(notify);
 
                 if opt.dry_run {
-                    let mut input_message = InputMessage::text("").reply_to(Some(message.id()));
+                    let mut input_message = InputMessage::default().reply_to(Some(message.id()));
                     if is_video {
                         input_message = input_message.document(uploaded).mime_type("video/mp4");
                     } else {
