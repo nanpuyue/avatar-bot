@@ -416,7 +416,6 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
             out_stream.set_codecpar(encode_context.extract_codecpar());
         }
 
-        output_format_context.dump(0, c"file.mp4")?;
         output_format_context.write_header(&mut None)?;
 
         let mut sws_context = SwsContext::get_context(
