@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use grammers_client::types::media::Uploaded;
@@ -13,9 +14,10 @@ use grammers_tl_types::functions::channels::EditPhoto;
 use grammers_tl_types::functions::messages::SetTyping;
 use grammers_tl_types::types::{InputChatUploadedPhoto, MessageEntityCode};
 use lazy_static::lazy_static;
-use tokio::sync::Mutex;
+use tokio::select;
+use tokio::sync::{Mutex, Notify};
 use tokio::task::spawn;
-use tokio::time::timeout;
+use tokio::time::{interval, timeout};
 
 use crate::error::{Error, IntoErrorMessage, Message as _};
 use crate::image::{image_to_png, tgs_to_png};
@@ -294,9 +296,31 @@ impl RunCommand for Client {
             return "技能冷却中".result();
         }
 
-        self.set_typing(chat).await?;
-
         if let Some(ref x) = message.reply_to_message_id() {
+            let notify = Arc::new(Notify::new());
+            spawn({
+                let mut bot = self.clone();
+                let chat = chat.clone();
+                let notify = notify.clone();
+                let mut interval = interval(Duration::from_secs(8));
+                async move {
+                    loop {
+                        select! {
+                            _ = notify.notified() => break,
+                            _ = interval.tick() => bot.set_typing(&chat).await?,
+                        }
+                    }
+                    Ok::<_, Error>(())
+                }
+            });
+            struct Notified(Arc<Notify>);
+            impl Drop for Notified {
+                fn drop(&mut self) {
+                    self.0.notify_one();
+                }
+            }
+            let notify = Notified(notify);
+
             let message = self
                 .get_messages_by_id(chat, &[*x])
                 .await?
@@ -378,6 +402,9 @@ impl RunCommand for Client {
                     "file.png"
                 };
                 let uploaded = self.upload_file(buf, file_name).await?;
+
+                drop(notify);
+
                 if opt.dry_run {
                     let mut input_message = InputMessage::text("").reply_to(Some(message.id()));
                     if is_video {
