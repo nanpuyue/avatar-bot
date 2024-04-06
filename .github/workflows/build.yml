@@ -1,0 +1,40 @@
+name: build avatar-bot
+
+on: [push]
+
+env:
+  BUILDER_IMAGE: ghcr.io/nanpuyue/avatar-bot-builder
+
+jobs:
+  build:
+    name: build for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+          - arch: arm64
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Build avatar-bot
+        run: |
+          docker run --platform=linux/${{ matrix.arch }}\
+           -e RUSTFLAGS="-C opt-level=s -C link-arg=-s"\
+           -v "$PWD":"/build/avatar-bot"\
+           --workdir "/build/avatar-bot"\
+           ghcr.io/nanpuyue/avatar-bot-builder:latest\
+           cargo build --release
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: avatar-bot.${{ matrix.arch }}
+          path: ./target/release/avatar-bot
+          if-no-files-found: error
+          retention-days: 30
