@@ -8,8 +8,9 @@ use grammers_client::types::media::Uploaded;
 use grammers_client::types::photo_sizes::VecExt;
 use grammers_client::types::{Downloadable, Media, Message, PackedChat};
 use grammers_client::{Client, InputMessage, Update};
-use grammers_tl_types::enums::{InputChatPhoto, MessageEntity};
+use grammers_tl_types::enums::{InputChatPhoto, MessageEntity, SendMessageAction};
 use grammers_tl_types::functions::channels::EditPhoto;
+use grammers_tl_types::functions::messages::SetTyping;
 use grammers_tl_types::types::{InputChatUploadedPhoto, MessageEntityCode};
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
@@ -178,6 +179,7 @@ impl Entity for Message {
 trait RunCommand {
     async fn help(&mut self, message: &Message) -> Result<(), Error>;
     async fn set_avatar(&mut self, message: &Message, opt: &Opt) -> Result<(), Error>;
+    async fn set_typing<C: Into<PackedChat>>(&mut self, chat: C) -> Result<(), Error>;
     async fn upload_file(&mut self, file: Vec<u8>, name: &str) -> Result<Uploaded, Error>;
     async fn edit_photo<C: Into<PackedChat>>(
         &mut self,
@@ -225,6 +227,20 @@ impl RunCommand for Client {
 
         // TODO
         let _ = self.send_message(message.chat(), input_message).await?;
+        Ok(())
+    }
+
+    async fn set_typing<C: Into<PackedChat>>(&mut self, chat: C) -> Result<(), Error> {
+        let chat = Into::<PackedChat>::into(chat);
+        let input_peer = chat.to_input_peer();
+        let set_typing = SetTyping {
+            peer: input_peer,
+            top_msg_id: None,
+            action: SendMessageAction::SendMessageTypingAction,
+        };
+
+        // TODO
+        let _ = self.invoke(&set_typing).await?;
         Ok(())
     }
 
@@ -277,6 +293,8 @@ impl RunCommand for Client {
         if !opt.dry_run && chat_last_update.elapsed() < MIN_INTERVAL {
             return "技能冷却中".result();
         }
+
+        self.set_typing(chat).await?;
 
         if let Some(ref x) = message.reply_to_message_id() {
             let message = self
