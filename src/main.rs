@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use grammers_client::{Client, Config, InitParams};
 use grammers_session::Session;
+use rsmpeg::ffi;
 use tokio::select;
 use tokio::signal::ctrl_c;
 
@@ -21,6 +22,8 @@ pub static USERNAME: OnceLock<String> = OnceLock::new();
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    unsafe { ffi::av_log_set_level(ffi::AV_LOG_ERROR as i32) };
+
     let api_id = env::var("API_ID")
         .expect("API_ID")
         .parse()
