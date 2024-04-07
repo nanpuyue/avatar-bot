@@ -418,23 +418,28 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
 
         output_format_context.write_header(&mut None)?;
 
-        let mut sws_context = SwsContext::get_context(
-            width,
-            height,
-            first_frame.format,
-            width,
-            height,
-            encode_context.pix_fmt,
-            ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
-        )
-        .ok_or("Failed to get sws_context")?;
+        let mut sws_context = if first_frame.format != dst_frame.format {
+            let sws_context = SwsContext::get_context(
+                width,
+                height,
+                first_frame.format,
+                width,
+                height,
+                encode_context.pix_fmt,
+                ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
+            )
+            .ok_or("Failed to get sws_context")?;
+            Some(sws_context)
+        } else {
+            None
+        };
         let mut encode_frame = |src_frame: &mut AVFrame| -> Result<(), Error> {
-            let frame_after = if src_frame.format == dst_frame.format {
-                src_frame
-            } else {
+            let frame_after = if let Some(sws_context) = sws_context.as_mut() {
                 sws_context.scale_frame(src_frame, 0, height, &mut dst_frame)?;
                 dst_frame.set_pts(src_frame.pts);
                 &mut dst_frame
+            } else {
+                src_frame
             };
 
             encode_write_frame(
