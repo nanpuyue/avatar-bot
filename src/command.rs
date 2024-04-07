@@ -327,27 +327,34 @@ impl RunCommand for Client {
                 .swap_remove(0)
                 .ok_or("读取回复的消息失败".error())?;
 
+            let mut file = None;
             let mut is_square = false;
             let mut is_video = false;
-            let image = if let Some(media) = media_message.media() {
-                let mut download = false;
+            let mut error = None;
+            if let Some(media) = media_message.media() {
+                let mut download = None;
                 let mut mime = None;
                 let mut sticker_id = 0;
                 match &media {
                     Media::Photo(x) => {
                         if let Some(x) = x.thumbs().largest() {
-                            download = x.size() <= MAX_FILESIZE;
+                            download.replace(x.size() <= MAX_FILESIZE);
                         }
                     }
                     Media::Document(x) => {
-                        download = x.size() <= MAX_FILESIZE as _;
                         mime = x.mime_type();
-                        if let Some((width, height)) = x.resolution() {
-                            is_square = width == height;
-                        }
+                        match mime.and_then(|x| x.split_once('/').map(|x| x.0)) {
+                            Some("video" | "image") => {
+                                download.replace(x.size() <= MAX_FILESIZE as _);
+                                if let Some((width, height)) = x.resolution() {
+                                    is_square = width == height;
+                                }
+                            }
+                            _ => error = Some("不支持的文件类型"),
+                        };
                     }
                     Media::Sticker(x) => {
-                        download = x.document.size() <= MAX_FILESIZE as _;
+                        download.replace(x.document.size() <= MAX_FILESIZE as _);
                         mime = x.document.mime_type();
                         if let Some((width, height)) = x.document.resolution() {
                             is_square = width == height;
@@ -358,42 +365,45 @@ impl RunCommand for Client {
                 }
 
                 let mime = mime.map(str::to_string);
-                if download {
-                    let mut buf = Vec::new();
-                    let mut downloader = self.iter_download(&Downloadable::Media(media));
-                    while let Some(x) = downloader.next().await? {
-                        buf.extend(x);
-                    }
-
-                    if let Some(x) = mime {
-                        if x.starts_with("video/") {
-                            is_video = true;
-                            if !is_square || !x.starts_with("video/mp4") {
-                                buf = video_to_mp4(buf, opt.color)?;
-                                is_square = true
-                            }
-                        } else if x == "application/x-tgsticker" {
-                            is_video = true;
-                            if is_square {
-                                buf = tgs_to_mp4(buf, &format!("{sticker_id}"), opt.color)?;
-                            } else {
-                                buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
-                            }
-                        } else if !x.starts_with("image/") {
-                            return "不支持的文件类型".result();
+                if let Some(download) = download {
+                    if download {
+                        let mut buf = Vec::new();
+                        let mut downloader = self.iter_download(&Downloadable::Media(media));
+                        while let Some(x) = downloader.next().await? {
+                            buf.extend(x);
                         }
+
+                        if let Some(x) = mime {
+                            if x.starts_with("video/") {
+                                is_video = true;
+                                if !is_square || !x.starts_with("video/mp4") {
+                                    buf = video_to_mp4(buf, opt.color)?;
+                                    is_square = true
+                                }
+                            } else if x == "application/x-tgsticker" {
+                                is_video = true;
+                                if is_square {
+                                    buf = tgs_to_mp4(buf, &format!("{sticker_id}"), opt.color)?;
+                                } else {
+                                    buf = tgs_to_png(buf, &format!("{sticker_id}"))?;
+                                }
+                            }
+                        }
+                        file = Some(buf);
+                    } else {
+                        error = Some("文件大小超出限制");
                     }
-                    Some(buf)
-                } else if let Some(x) = media_message.url() {
-                    link_to_img(x).await?
-                } else {
-                    None
                 }
-            } else {
-                None
             };
 
-            if let Some(mut buf) = image {
+            if file.is_none() {
+                if let Some(x) = media_message.url() {
+                    error = None;
+                    file = link_to_img(x).await?
+                }
+            }
+
+            if let Some(mut buf) = file {
                 is_video = is_video && is_square;
                 let file_name = if is_video {
                     "file.mp4"
@@ -418,7 +428,7 @@ impl RunCommand for Client {
                     *chat_last_update = Instant::now();
                 }
             } else {
-                return "未检测到受支持的头像".result();
+                return error.unwrap_or("未检测到受支持的头像").result();
             }
         } else {
             return "使用 set_avatar 命令时请回复包含头像的消息 (照片、视频、贴纸、文件)".result();
