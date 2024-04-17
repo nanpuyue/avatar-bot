@@ -17,7 +17,7 @@ EOF
 chmod +x /usr/local/bin/rustc_wrapper
 
 RLOTTIE_VERSION="d400087"
-FFMPEG_VERSION="6.1.1"
+FFMPEG_VERSION="7.0"
 LIBVPX_VERSION="1.14.0"
 OPENCV_VERSION="4.9.0"
 

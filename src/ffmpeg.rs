@@ -54,7 +54,7 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
 
     let (video_stream_index, mut decode_context) = {
         let (stream_index, mut decoder) = input_format_context
-            .find_best_stream(ffi::AVMediaType_AVMEDIA_TYPE_VIDEO)?
+            .find_best_stream(ffi::AVMEDIA_TYPE_VIDEO)?
             .ok_or("Failed to find the best stream")?;
         let stream = input_format_context.streams().get(stream_index).unwrap();
 
@@ -93,15 +93,14 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
     };
 
     let mut encode_context = {
-        let encoder =
-            AVCodec::find_encoder(ffi::AVCodecID_AV_CODEC_ID_PNG).ok_or("Encoder not found")?;
+        let encoder = AVCodec::find_encoder(ffi::AV_CODEC_ID_PNG).ok_or("Encoder not found")?;
         let mut encode_context = AVCodecContext::new(&encoder);
 
         encode_context.set_bit_rate(decode_context.bit_rate);
         encode_context.set_width(decode_context.width);
         encode_context.set_height(decode_context.height);
         encode_context.set_time_base(ffi::AVRational { num: 1, den: 1 });
-        encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_RGBA);
+        encode_context.set_pix_fmt(ffi::AV_PIX_FMT_RGBA);
         encode_context.open(None)?;
 
         encode_context
@@ -116,6 +115,9 @@ pub fn video_to_png(data: Vec<u8>) -> Result<Vec<u8>, Error> {
             encode_context.height,
             encode_context.pix_fmt,
             ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
+            None,
+            None,
+            None,
         )
         .ok_or("Invalid sws_context parameter")?;
         let image_buffer = AVImage::new(

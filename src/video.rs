@@ -9,7 +9,7 @@ use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 use rsmpeg::avformat::{
     AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
 };
-use rsmpeg::avutil::{av_d2q, av_inv_q, AVFrame, AVMem, AVRational};
+use rsmpeg::avutil::{av_d2q, av_inv_q, opt_set, AVFrame, AVMem, AVRational};
 use rsmpeg::error::RsmpegError;
 use rsmpeg::ffi;
 use rsmpeg::swscale::SwsContext;
@@ -41,7 +41,7 @@ struct AVFrameIter {
 }
 
 unsafe fn frame_set_color(frame: &mut AVFrame, color: Color) {
-    if frame.format != ffi::AVPixelFormat_AV_PIX_FMT_BGRA {
+    if frame.format != ffi::AV_PIX_FMT_BGRA {
         return;
     }
     let len = frame.width * frame.height * 4;
@@ -69,7 +69,7 @@ impl FrameDataIter for SurfaceIter {
         unsafe {
             self.frame_buffer.fill_arrays(
                 self.surface.data_as_bytes().as_ptr(),
-                ffi::AVPixelFormat_AV_PIX_FMT_BGRA,
+                ffi::AV_PIX_FMT_BGRA,
                 self.width,
                 self.height,
             )?;
@@ -119,13 +119,13 @@ impl FrameDataIter for AVFrameIter {
 
                     if self.sws_context.is_none()
                         && (frame.width != frame.height
-                            || frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P
+                            || frame.format == ffi::AV_PIX_FMT_YUVA420P
                             || min(frame.width, frame.height) % 2 != 0)
                     {
-                        let dst_fromat = if frame.format == ffi::AVPixelFormat_AV_PIX_FMT_YUVA420P {
-                            ffi::AVPixelFormat_AV_PIX_FMT_BGRA
+                        let dst_fromat = if frame.format == ffi::AV_PIX_FMT_YUVA420P {
+                            ffi::AV_PIX_FMT_BGRA
                         } else {
-                            ffi::AVPixelFormat_AV_PIX_FMT_YUV420P
+                            ffi::AV_PIX_FMT_YUV420P
                         };
 
                         let diff = frame.width - frame.height;
@@ -144,6 +144,9 @@ impl FrameDataIter for AVFrameIter {
                             dst_length,
                             dst_fromat,
                             0,
+                            None,
+                            None,
+                            None,
                         )
                         .ok_or("Failed to get sws_context")?;
                         self.sws_context = Some(sws_context);
@@ -184,7 +187,7 @@ impl FrameDataIter for AVFrameIter {
                         };
                         self.frame_buffer.make_writable()?;
                         sws_ctx.scale_frame(&frame, 0, frame.height, &mut self.frame_buffer)?;
-                        if self.frame_buffer.format == ffi::AVPixelFormat_AV_PIX_FMT_BGRA {
+                        if self.frame_buffer.format == ffi::AV_PIX_FMT_BGRA {
                             unsafe { frame_set_color(&mut self.frame_buffer, self.color) };
                         }
                         self.frame_buffer.set_pts(frame.pts);
@@ -223,7 +226,7 @@ fn decode_lottie(animation: Animation, color: Color) -> Result<SurfaceIter, Erro
     let size = animation.size();
     let totalframe = animation.totalframe();
     let mut frame_buffer = AVFrame::new();
-    frame_buffer.set_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA);
+    frame_buffer.set_format(ffi::AV_PIX_FMT_BGRA);
     frame_buffer.set_width(size.width as _);
     frame_buffer.set_height(size.height as _);
     frame_buffer.alloc_buffer()?;
@@ -245,7 +248,7 @@ fn decode_video(
 ) -> Result<AVFrameIter, Error> {
     let (stream_index, decode_context) = {
         let (stream_index, mut decoder) = input_format_context
-            .find_best_stream(ffi::AVMediaType_AVMEDIA_TYPE_VIDEO)?
+            .find_best_stream(ffi::AVMEDIA_TYPE_VIDEO)?
             .ok_or("Failed to find the best stream")?;
         let stream = input_format_context.streams().get(stream_index).unwrap();
 
@@ -387,17 +390,9 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
         encode_context.set_height(height);
         encode_context.set_time_base(time_base);
         encode_context.set_framerate(framerate);
-        encode_context.set_pix_fmt(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P);
-        unsafe {
-            if ffi::av_opt_set(
-                encode_context.priv_data,
-                c"preset".as_ptr(),
-                c"slow".as_ptr(),
-                0,
-            ) < 0
-            {
-                return Err("Failed to set preset".into());
-            }
+        encode_context.set_pix_fmt(ffi::AV_PIX_FMT_YUV420P);
+        if unsafe { opt_set(encode_context.priv_data, c"preset", c"slow", 0) }.is_err() {
+            return Err("Failed to set x264 option".into());
         }
         if output_format_context.oformat().flags & ffi::AVFMT_GLOBALHEADER as i32 != 0 {
             encode_context
@@ -427,6 +422,9 @@ fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
                 height,
                 encode_context.pix_fmt,
                 ffi::SWS_FAST_BILINEAR | ffi::SWS_ACCURATE_RND,
+                None,
+                None,
+                None,
             )
             .ok_or("Failed to get sws_context")?;
             Some(sws_context)
@@ -486,18 +484,10 @@ fn encode_write_frame(
         packet.set_stream_index(out_stream_index as i32);
         packet.rescale_ts(
             encode_context.time_base,
-            output_format_context
-                .streams()
-                .get(out_stream_index)
-                .ok_or("Failed to get stream")?
-                .time_base,
+            output_format_context.streams()[out_stream_index].time_base,
         );
 
-        match output_format_context.interleaved_write_frame(&mut packet) {
-            Ok(()) => Ok(()),
-            Err(RsmpegError::InterleavedWriteFrameError(-22)) => Ok(()),
-            Err(e) => Err(e),
-        }?;
+        output_format_context.interleaved_write_frame(&mut packet)?;
     }
 
     Ok(())

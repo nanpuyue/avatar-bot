@@ -11,10 +11,10 @@ flate2 = "1.0.28"
 image = "0.25.1"
 imageproc = "0.24.0"
 lazy_static = "1.4.0"
-opencv = { version = "0.89.0", default-features = false, features = ["clang-runtime", "imgcodecs", "objdetect"] }
+opencv = { version = "0.90.0", default-features = false, features = ["clang-runtime", "imgcodecs", "objdetect"] }
 reqwest = "0.12.3"
 rlottie = "0.5.2"
-rsmpeg = "0.14.2"
+rsmpeg = "0.15.0"
 grammers-client = { version = "0.5.0", features = ["unstable_raw"] }
 grammers-tl-types = "0.5.1"
 grammers-session = "0.5.1"
