@@ -52,13 +52,13 @@ unsafe fn frame_set_color(frame: &mut AVFrame, color: Color) {
     }
 }
 
-trait FrameDataIter {
+trait FrameIter {
     fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error>;
     fn time_base(&self) -> AVRational;
     fn framerate(&self) -> AVRational;
 }
 
-impl FrameDataIter for SurfaceIter {
+impl FrameIter for SurfaceIter {
     fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error> {
         if self.frame_index >= self.totalframe {
             return Ok(None);
@@ -92,7 +92,7 @@ impl FrameDataIter for SurfaceIter {
     }
 }
 
-impl FrameDataIter for AVFrameIter {
+impl FrameIter for AVFrameIter {
     fn next_frame(&mut self) -> Result<Option<&mut AVFrame>, Error> {
         loop {
             let packet = loop {
@@ -373,7 +373,7 @@ fn output_format_context() -> Result<(AVFormatContextOutput, Arc<Mutex<Cursor<Ve
     Ok((output_format_context, data))
 }
 
-fn encode_mp4<S: FrameDataIter>(mut src: S) -> Result<Vec<u8>, Error> {
+fn encode_mp4<S: FrameIter>(mut src: S) -> Result<Vec<u8>, Error> {
     let buffer = {
         let time_base = src.time_base();
         let framerate = src.framerate();
