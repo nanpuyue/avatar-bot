@@ -172,9 +172,9 @@ pub fn image_to_png(data: &mut Vec<u8>, opt: &Opt) -> Result<(), Error> {
     if !opt.show_detect {
         match opt.color {
             Color::Trans => {
-                let widht = rgba.width() as _;
+                let width = rgba.width() as _;
                 let height = rgba.height() as _;
-                trans_flag(rgba.as_mut(), widht, height, true)
+                trans_flag(rgba.as_mut(), width, height, true)
             }
             Color::Rgb(x) => {
                 set_color(rgba.as_mut(), x);

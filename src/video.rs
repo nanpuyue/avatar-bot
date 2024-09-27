@@ -122,7 +122,7 @@ impl FrameIter for AVFrameIter {
                             || frame.format == ffi::AV_PIX_FMT_YUVA420P
                             || min(frame.width, frame.height) % 2 != 0)
                     {
-                        let dst_fromat = if frame.format == ffi::AV_PIX_FMT_YUVA420P {
+                        let dst_format = if frame.format == ffi::AV_PIX_FMT_YUVA420P {
                             ffi::AV_PIX_FMT_BGRA
                         } else {
                             ffi::AV_PIX_FMT_YUV420P
@@ -142,7 +142,7 @@ impl FrameIter for AVFrameIter {
                             frame.format,
                             dst_length,
                             dst_length,
-                            dst_fromat,
+                            dst_format,
                             0,
                             None,
                             None,
@@ -173,7 +173,7 @@ impl FrameIter for AVFrameIter {
                             self.crop_frame = Some(Box::new(crop_frame));
                         }
 
-                        self.frame_buffer.set_format(dst_fromat);
+                        self.frame_buffer.set_format(dst_format);
                         self.frame_buffer.set_width(dst_length);
                         self.frame_buffer.set_height(dst_length);
                         self.frame_buffer.alloc_buffer()?;
